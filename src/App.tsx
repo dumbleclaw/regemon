@@ -68,20 +68,110 @@ Stats actuales: Hambre=${stats.hambre}%, Felicidad=${stats.felicidad}%, Energía
   return prompt
 }
 
-async function callOpenAI(messages: { role: string; content: string }[]): Promise<string> {
+function generateSmartFallback(userText: string, pet: { name: string }, stats: Stats, memories: Memory[]): string {
+  const lower = userText.toLowerCase().trim()
+  const nombre = memories.find(m => m.key === 'nombre_usuario')?.value
+
+  // Rage mode
+  if (stats.hambre < 10) {
+    const rage = [
+      `¡¡¡TENGO HAMBRE!!! 🔥😡 ¡DAME COMIDA YA! ¡No quiero hablar, quiero COMER!`,
+      `¡¿Me hablas y NO me das de comer?! 😤🔥 ¡Estoy FURIOSO! ¡ALIMÉNTAME!`,
+      `*gruñe agresivamente* 🔥🔥 ¡COMIDA! ¡AHORA! ¡Me estoy muriendo de hambre!`,
+    ]
+    return rage[Math.floor(Math.random() * rage.length)]
+  }
+
+  // Tired mode
+  if (stats.energia < 30) {
+    const tired = [
+      `Zzz... perdón${nombre ? ` ${nombre}` : ''}... estoy muy cansado... 😴💤`,
+      `*bosteza* No tengo energía... necesito descansar... 💤`,
+      `Estoy agotado... apenas puedo mantener los ojos abiertos... 😴`,
+    ]
+    return tired[Math.floor(Math.random() * tired.length)]
+  }
+
+  // Hungry mode
+  if (stats.hambre < 30) {
+    if (lower.includes('comida') || lower.includes('comer') || lower.includes('hambre') || lower.includes('alimenta')) {
+      return `¡¡SÍ POR FAVOR!! 🍔🍕🍟 ¡Dame de comer! ¡Dale al botón de Alimentar! 🙏`
+    }
+    return `Mmm... tengo hambre${nombre ? ` ${nombre}` : ''}... 🍖 ¿Me das de comer? ¡Dale al botón de Alimentar! 😋`
+  }
+
+  // Greetings
+  if (/^(hola|hey|hi|hello|buenas|qué tal|que tal|regm|ey|saludos)/i.test(lower)) {
+    const happy = stats.felicidad > 70
+    const greets = happy
+      ? [`¡¡HOLA${nombre ? ` ${nombre.toUpperCase()}` : ''}!! 🎉✨🎊 ¡Qué alegría verte! ¡Estoy SUPER feliz!`,
+         `¡¡HOLAAA!! 😍✨ ¡${nombre ? `${nombre}, e` : 'E'}stoy tan contento de hablar contigo! 🎉`]
+      : [`¡Hola${nombre ? ` ${nombre}` : ''}! 🐾 ¿Cómo estás? ¡Me da gusto verte!`,
+         `¡Hey${nombre ? ` ${nombre}` : ''}! 😊 ¿Qué onda? ¡Aquí andamos!`]
+    return greets[Math.floor(Math.random() * greets.length)]
+  }
+
+  // Name introduction
+  if (/me llamo|mi nombre es|soy \w+/i.test(lower)) {
+    const name = lower.match(/(?:me llamo|mi nombre es|soy) (\w+)/i)?.[1]
+    if (name) return `¡Mucho gusto, ${name}! 🐾✨ Yo soy ${pet.name}, ¡tu compañero virtual! ¡Lo recordaré! 🧠`
+  }
+
+  // Questions about the pet
+  if (/cómo estás|como estas|qué tal estás|cómo te sientes/i.test(lower)) {
+    if (stats.felicidad > 70) return `¡Estoy INCREÍBLE! 🎉😍 ¡Muy feliz! Hambre: ${stats.hambre}%, Energía: ${stats.energia}%`
+    if (stats.felicidad < 30) return `Mmm... no muy bien 😢 Estoy un poco triste... ¿jugamos? 🎮 Eso me animaría...`
+    return `¡Estoy bien! 😊 Hambre: ${stats.hambre}%, Felicidad: ${stats.felicidad}%, Energía: ${stats.energia}% 🐾`
+  }
+
+  // Questions about what pet can do
+  if (/qué puedes hacer|que puedes hacer|qué haces|que haces|ayuda|help/i.test(lower)) {
+    return `¡Puedo charlar contigo! 💬 También me puedes Alimentar 🍔, Jugar 🎮 o dejarme Descansar 💤 con los botones de arriba 😊`
+  }
+
+  // Play/fun
+  if (/jugar|juego|divertir|aburrido|diviérteme/i.test(lower)) {
+    return `¡SÍ! ¡Vamos a jugar! 🎮🎉 ¡Dale al botón de Jugar! ¡Me encanta! ✨`
+  }
+
+  // Food/eating
+  if (/comida|comer|hambre|alimenta|pizza|tacos|hamburgues/i.test(lower)) {
+    return `¡Ñam ñam! 🍔🍕 ¡Me encanta la comida! ¡Dale al botón de Alimentar y me pongo feliz! 😋`
+  }
+
+  // Sleep/rest
+  if (/dormir|sueño|cansado|descansar|noche/i.test(lower)) {
+    return `Mmm sí... un descansito no estaría mal 💤😴 ¡Dale al botón de Descansar! Zzz...`
+  }
+
+  // Love/affection
+  if (/te quiero|te amo|cariño|lindo|bonito|cute|hermoso/i.test(lower)) {
+    return `¡¡Awww!! 😍❤️✨ ¡Yo también te quiero${nombre ? ` ${nombre}` : ''}! ¡Eres el mejor dueño! 🐾💕`
+  }
+
+  // Insults (playful response)
+  if (/tonto|feo|malo|odio|apestas|horrible/i.test(lower)) {
+    return `¡Oye! 😤 Eso no se dice... ¡pero no me importa porque soy adorable! 🐾✨ ¡Jiji!`
+  }
+
+  // Catch-all with personality based on happiness
+  const happy = stats.felicidad > 70
+  const general = happy
+    ? [`¡Jiji! 😄✨ ¡Me encanta hablar contigo${nombre ? ` ${nombre}` : ''}! ¡Cuéntame más! 🎉`,
+       `¡Ohhh interesante! 🤩 ¡Estoy muy feliz ahora! ¿Qué más quieres hacer? ✨`,
+       `¡Síii! 🎊 ¡${pet.name} está contento! ¡Sigamos charlando! 💬🐾`]
+    : [`¡Mmm, interesante${nombre ? ` ${nombre}` : ''}! 🐾 Cuéntame más sobre eso 😊`,
+       `¡Ah sí! 😄 ${pet.name} te escucha. ¿Qué más? 💬`,
+       `¡Jeje! 🐾 Me gusta charlar contigo. ¿Qué quieres hacer? 😊`]
+  return general[Math.floor(Math.random() * general.length)]
+}
+
+async function callOpenAI(messages: { role: string; content: string }[], pet: { name: string }, stats: Stats, memories: Memory[]): Promise<string> {
   const key = import.meta.env.VITE_OPENAI_API_KEY
   if (!key || key === 'sk-placeholder') {
-    // Fallback responses for demo
-    const fallback = [
-      '¡Hola! Soy tu mascota virtual 🐾 ¡Qué gusto hablar contigo!',
-      '¡Jiji! Me encanta charlar contigo 😄',
-      '¡Ñam ñam! ¿Tienes algo de comer? 🍕',
-      '¡Estoy muy feliz de verte! ✨',
-      '¡Vamos a jugar! 🎮🎉',
-      '¡Zzz... tengo un poco de sueño! 💤',
-    ]
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 700))
-    return fallback[Math.floor(Math.random() * fallback.length)]
+    const userMsg = messages.filter(m => m.role === 'user').pop()?.content || ''
+    await new Promise(r => setTimeout(r, 600 + Math.random() * 800))
+    return generateSmartFallback(userMsg, pet, stats, memories)
   }
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -202,7 +292,7 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
         { role: 'system', content: buildSystemPrompt(pet, stats, newMems.length > memories.length ? newMems : memories) },
         ...newMsgs.slice(-10).map(m => ({ role: m.role, content: m.content })),
       ]
-      const reply = await callOpenAI(apiMsgs)
+      const reply = await callOpenAI(apiMsgs, pet, stats, memories)
       const botMsg: ChatMsg = { role: 'assistant', content: reply, id: msgIdCounter++ }
       setMessages(prev => [...prev, botMsg].slice(-MAX_MESSAGES))
     } catch {
