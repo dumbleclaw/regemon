@@ -6,8 +6,11 @@ type ChatMsg = { role: 'user' | 'assistant'; content: string; id: number }
 type Memory = { key: string; value: string }
 type StatFloat = { id: number; text: string; x: number }
 
-const DECAY_INTERVAL = 3000
-const DECAY_AMOUNT = 1
+const DECAY_INTERVAL = 2000
+// Each stat decays at different rates for realistic gameplay
+const DECAY_HAMBRE = 1.5   // hunger drops fastest
+const DECAY_FELICIDAD = 0.8 // happiness drops medium
+const DECAY_ENERGIA = 1.0   // energy drops steady
 const MAX_MESSAGES = 20
 
 let msgIdCounter = Date.now()
@@ -386,18 +389,31 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
 }
 
 function PetView({ pet, onReset }: { pet: PetDef; onReset: () => void }) {
-  const [stats, setStats] = useState<Stats>({ hambre: 80, felicidad: 80, energia: 80 })
+  const [stats, setStats] = useState<Stats>({ hambre: 75, felicidad: 90, energia: 60 })
   const [reacting, setReacting] = useState(false)
   const [message, setMessage] = useState('')
   const msgTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const decayAccum = useRef({ hambre: 0, felicidad: 0, energia: 0 })
+
   useEffect(() => {
     const id = setInterval(() => {
-      setStats(s => ({
-        hambre: clamp(s.hambre - DECAY_AMOUNT),
-        felicidad: clamp(s.felicidad - DECAY_AMOUNT),
-        energia: clamp(s.energia - DECAY_AMOUNT),
-      }))
+      decayAccum.current.hambre += DECAY_HAMBRE
+      decayAccum.current.felicidad += DECAY_FELICIDAD
+      decayAccum.current.energia += DECAY_ENERGIA
+      const dh = Math.floor(decayAccum.current.hambre)
+      const df = Math.floor(decayAccum.current.felicidad)
+      const de = Math.floor(decayAccum.current.energia)
+      if (dh > 0 || df > 0 || de > 0) {
+        decayAccum.current.hambre -= dh
+        decayAccum.current.felicidad -= df
+        decayAccum.current.energia -= de
+        setStats(s => ({
+          hambre: clamp(s.hambre - dh),
+          felicidad: clamp(s.felicidad - df),
+          energia: clamp(s.energia - de),
+        }))
+      }
     }, DECAY_INTERVAL)
     return () => clearInterval(id)
   }, [])
