@@ -3,6 +3,7 @@ export interface PetType {
   label: string
   emoji: string
   color: string
+  glow: string
   desc: string
   art: string[]
 }
@@ -13,60 +14,37 @@ export interface PetDef {
   desc: string
   art: string[]
   color: string
+  glow: string
   typeId: string
 }
 
 export const PET_TYPES: PetType[] = [
   {
-    id: 'semilla',
-    label: 'Semilla',
-    emoji: '🌱',
-    color: '#53d769',
-    desc: 'Tipo planta — tranquilo y tierno',
-    art: [
-      '    🌱🌱🌱',
-      '   (      )',
-      '   | ◕  ◕ |',
-      '   |  ▽   |',
-      '   \\  ~  /',
-      '    ╰───╯',
-      '   /|   |\\',
-      '    🍃🍃🍃',
-    ],
+    id: 'unicornio',
+    label: 'Unicornio',
+    emoji: '🦄',
+    color: '#e879f9',
+    glow: 'rgba(232, 121, 249, 0.3)',
+    desc: 'Mágico y puro — sanador de corazones',
+    art: [],
   },
   {
-    id: 'gota',
-    label: 'Gota',
-    emoji: '💧',
-    color: '#4fc3f7',
-    desc: 'Tipo agua — juguetón y veloz',
-    art: [
-      '     💧💧',
-      '   (      )',
-      '   | ●  ● |',
-      '   |  ◡   |',
-      '   \\  ∿  /',
-      '    ╰───╯',
-      '   /|   |\\',
-      '    🌊🌊🌊',
-    ],
+    id: 'dragon',
+    label: 'Dragón',
+    emoji: '🐉',
+    color: '#f87171',
+    glow: 'rgba(248, 113, 113, 0.3)',
+    desc: 'Feroz y leal — guardián de fuego',
+    art: [],
   },
   {
-    id: 'chispa',
-    label: 'Chispa',
-    emoji: '✨',
-    color: '#f5c842',
-    desc: 'Tipo eléctrico — brillante y enérgico',
-    art: [
-      '    ⚡✨⚡',
-      '   (      )',
-      '   | ★  ★ |',
-      '   |  ▿   |',
-      '   \\ ⚡⚡ /',
-      '    ╰───╯',
-      '   /|   |\\',
-      '    ✨✨✨',
-    ],
+    id: 'alebrije',
+    label: 'Alebrije',
+    emoji: '🎭',
+    color: '#34d399',
+    glow: 'rgba(52, 211, 153, 0.3)',
+    desc: 'Espíritu guía — colores del alma',
+    art: [],
   },
 ]
 
@@ -76,8 +54,9 @@ export function createPet(name: string, typeId: string): PetDef {
     id: `${typeId}-${name.toLowerCase()}`,
     name,
     desc: `${petType.emoji} ${petType.desc}`,
-    art: petType.art,
+    art: [],
     color: petType.color,
+    glow: petType.glow,
     typeId,
   }
 }

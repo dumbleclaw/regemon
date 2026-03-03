@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { PET_TYPES, createPet, type PetDef } from './pets'
+import PixelPet from './PixelPet'
+import SocialTab from './SocialTab'
 
 /* ─── Types ─── */
 type Stats = { hambre: number; felicidad: number; energia: number }
@@ -13,10 +15,10 @@ type TrainingHistoryEntry = { score: number; category: TrainingCategory; timesta
 type TrainingData = { totalPoints: number; stage: number; trainingHistory: TrainingHistoryEntry[] }
 
 /* ─── Constants ─── */
-const DECAY_INTERVAL = 2000
-const DECAY_HAMBRE = 1.5
-const DECAY_FELICIDAD = 0.8
-const DECAY_ENERGIA = 1.0
+const DECAY_INTERVAL = 5000
+const DECAY_HAMBRE = 0.8
+const DECAY_FELICIDAD = 0.4
+const DECAY_ENERGIA = 0.5
 const MAX_MESSAGES = 20
 const FEED_COST = 10
 const INITIAL_COINS = 100
@@ -182,20 +184,55 @@ function generateSmartFallback(userText: string, pet: { name: string }, stats: S
   if (/qué puedes hacer|que puedes hacer|qué haces|que haces|ayuda|help/i.test(lower)) {
     return `¡Puedo charlar contigo! 💬 También me puedes Alimentar 🍔, Jugar 🎮 o dejarme Descansar 💤 con los botones de arriba 😊`
   }
-  if (/jugar|juego|divertir|aburrido|diviérteme/i.test(lower)) return `¡SÍ! ¡Vamos a jugar! 🎮🎉 ¡Dale al botón de Jugar! ¡Me encanta! ✨`
-  if (/comida|comer|hambre|alimenta|pizza|tacos|hamburgues/i.test(lower)) return `¡Ñam ñam! 🍔🍕 ¡Me encanta la comida! ¡Dale al botón de Alimentar y me pongo feliz! 😋`
+  if (/jugar|juego|divertir|aburrido|diviérteme/i.test(lower)) {
+    const r = [`¡SÍ! ¡Vamos a jugar! 🎮🎉 ¡Dale al botón de Jugar arriba!`, `¡Me ENCANTA jugar! 🎮✨ ¡Hazme cariñitos con el botón de Jugar! 🐾`, `¡Aburrido?! ¡Imposible conmigo! 🎮 ¡Dale al botón de Jugar y verás! 😎`]
+    return r[Math.floor(Math.random() * r.length)]
+  }
+  if (/comida|comer|hambre|alimenta|pizza|tacos|hamburgues|sushi|ramen/i.test(lower)) {
+    const r = [`¡Ñam ñam! 🍔🍕 ¡Me encanta la comida! ¡Aliméntame con el botón! 😋`, `¡SUSHI! ¡RAMEN! 🍣🍜 ¡Me encanta todo! ¡Dale al botón de Alimentar! 🤤`, `¡Comidaaa! 😍 ¡Mi cosa favorita! ¡Aliméntame y me pongo súper feliz! 🐾`]
+    return r[Math.floor(Math.random() * r.length)]
+  }
   if (/dormir|sueño|cansado|descansar|noche/i.test(lower)) return `Mmm sí... un descansito no estaría mal 💤😴 ¡Dale al botón de Descansar! Zzz...`
-  if (/te quiero|te amo|cariño|lindo|bonito|cute|hermoso/i.test(lower)) return `¡¡Awww!! 😍❤️✨ ¡Yo también te quiero${nombre ? ` ${nombre}` : ''}! ¡Eres el mejor dueño! 🐾💕`
-  if (/tonto|feo|malo|odio|apestas|horrible/i.test(lower)) return `¡Oye! 😤 Eso no se dice... ¡pero no me importa porque soy adorable! 🐾✨ ¡Jiji!`
+  if (/te quiero|te amo|cariño|lindo|bonito|cute|hermoso|kawaii/i.test(lower)) {
+    const r = [`¡¡Awww!! 😍❤️✨ ¡Yo también te quiero${nombre ? ` ${nombre}` : ''}! 🐾💕`, `¡Kyaaa! 😳💕 ¡Eso es muy kawaii! ¡${pet.name} te adora! ✨`, `*se sonroja* 😊💗 ¡Eres la mejor persona del mundo! ¡Te quiero mucho! 🐾`]
+    return r[Math.floor(Math.random() * r.length)]
+  }
+  if (/tonto|feo|malo|odio|apestas|horrible/i.test(lower)) {
+    const r = [`¡Oye! 😤 Eso duele... ¡pero sé que no lo dices en serio! 🐾✨`, `*ojos llorosos* 🥺 ¿De verdad piensas eso? Yo creía que éramos amigos...`, `¡Hmph! 😤 ¡Pues yo sigo siendo adorable aunque digas eso! 🐾`]
+    return r[Math.floor(Math.random() * r.length)]
+  }
+  if (/anime|manga|japón|japan|otaku|naruto|goku|pikachu|pokemon/i.test(lower)) {
+    const r = [`¡Me ENCANTA el anime! 🎌✨ ¡Soy como un personaje de anime! ¿Cuál es tu favorito? 😍`, `¡Sugoiii! 🌸 ¡Yo soy tu mascota anime en la vida real! ¡Nyan! 🐾✨`, `¡Anime! ¡Mi mundo! 🎌 ¡Si fuera un anime sería el protagonista! ¡Dattebayo! 😎`]
+    return r[Math.floor(Math.random() * r.length)]
+  }
+  if (/gracias|thanks|arigato/i.test(lower)) return `¡De nada${nombre ? ` ${nombre}` : ''}! 😊🐾 ¡Para eso estoy! ¡Tu felicidad es mi felicidad! ✨`
+  if (/chiste|broma|gracioso|risa|jaja/i.test(lower)) {
+    const chistes = [`¿Por qué el gato fue al médico? ¡Porque se sentía "miau-l"! 😹🐾`, `¿Qué le dijo un pixel a otro? ¡Estamos en alta resolución! 🎮😂`, `¿Cómo se despide un japonés? ¡Sayo-NYAN-ra! 🐱🎌`]
+    return chistes[Math.floor(Math.random() * chistes.length)]
+  }
+  if (/quién eres|quien eres|qué eres|que eres|tu nombre/i.test(lower)) {
+    return `¡Soy ${pet.name}! 🐾✨ Tu mascota virtual kawaii. ¡Puedes alimentarme, jugar conmigo y charlar! ¡Cuídame bien! 😊`
+  }
+  if (/música|musica|cantar|canción|cancion/i.test(lower)) return `¡La la laaa! 🎵✨ ¡Me encanta la música! Si pudiera cantar sería idol! 🎤🌸`
+  if (/clima|tiempo|lluvia|sol|frío|calor/i.test(lower)) return `¡Aquí en el mundo virtual siempre hace buen tiempo! ☀️🌈 ¡Pero me gusta cuando llueve, es relajante! 🌧️✨`
+  if (/escuela|trabajo|estudiar|tarea|examen/i.test(lower)) return `¡Ánimo${nombre ? ` ${nombre}` : ''}! 📚✨ ¡Tú puedes con todo! ¡${pet.name} cree en ti! 💪🐾`
+  if (/triste|mal|deprimido|solo|soledad|llorar/i.test(lower)) return `¡No estés triste${nombre ? ` ${nombre}` : ''}! 🥺💕 ¡Yo siempre estoy aquí para ti! ¡Ánimo! ¡Te mando un abrazo virtual! 🤗🐾`
+  if (/\?/.test(lower) && lower.length > 5) {
+    const r = [`¡Buena pregunta! 🤔✨ Mmm... déjame pensar... ¡Creo que la respuesta es "más comida"! 😋🐾`, `¡Uy! 🤔 Eso es complicado para una mascota... ¡pero lo que sé es que te quiero! 💕🐾`, `¡Hmm! 🧐 No estoy seguro, ¡pero sé que juntos podemos con todo! ✨🐾`]
+    return r[Math.floor(Math.random() * r.length)]
+  }
 
+  // General responses — varied and contextual
   const happy = stats.felicidad > 70
   const general = happy
-    ? [`¡Jiji! 😄✨ ¡Me encanta hablar contigo${nombre ? ` ${nombre}` : ''}! ¡Cuéntame más! 🎉`,
-       `¡Ohhh interesante! 🤩 ¡Estoy muy feliz ahora! ¿Qué más quieres hacer? ✨`,
-       `¡Síii! 🎊 ¡${pet.name} está contento! ¡Sigamos charlando! 💬🐾`]
-    : [`¡Mmm, interesante${nombre ? ` ${nombre}` : ''}! 🐾 Cuéntame más sobre eso 😊`,
-       `¡Ah sí! 😄 ${pet.name} te escucha. ¿Qué más? 💬`,
-       `¡Jeje! 🐾 Me gusta charlar contigo. ¿Qué quieres hacer? 😊`]
+    ? [`¡Jiji! 😄✨ ¡Me encanta hablar contigo${nombre ? ` ${nombre}` : ''}! ¡Cuéntame más!`,
+       `¡Ohhh! 🤩 ¡Qué interesante! ¡Estoy muy feliz hoy! ¿Qué más quieres hacer? ✨`,
+       `¡Síii! 🎊 ¡${pet.name} está muy contento hablando contigo! 💬🐾`,
+       `¡Nyan~! 🌸 ¡Me siento genial! ¡Sigamos charlando! ✨`]
+    : [`¡Interesante${nombre ? ` ${nombre}` : ''}! 🐾 Cuéntame más 😊`,
+       `¡Ah sí! 😄 ${pet.name} te escucha con atención. ¿Qué más? 💬`,
+       `¡Jeje! 🐾 Me gusta charlar contigo. ¿Qué quieres hacer ahora? 😊`,
+       `¡Oh! 😮 ¡Eso suena bien! ¡Sigue contándome! 🐾✨`]
   return general[Math.floor(Math.random() * general.length)]
 }
 
@@ -206,13 +243,23 @@ async function callOpenAI(messages: { role: string; content: string }[], pet: { 
     await new Promise(r => setTimeout(r, 600 + Math.random() * 800))
     return generateSmartFallback(userMsg, pet, stats, memories)
   }
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 150 }),
-  })
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content || '¡No pude pensar en nada! 🤯'
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 150 }),
+    })
+    const data = await res.json()
+    if (data.error) {
+      // API error (quota, etc) — use smart fallback
+      const userMsg = messages.filter(m => m.role === 'user').pop()?.content || ''
+      return generateSmartFallback(userMsg, pet, stats, memories)
+    }
+    return data.choices?.[0]?.message?.content || '¡No pude pensar en nada! 🤯'
+  } catch {
+    const userMsg = messages.filter(m => m.role === 'user').pop()?.content || ''
+    return generateSmartFallback(userMsg, pet, stats, memories)
+  }
 }
 
 /* ─── Components ─── */
@@ -220,11 +267,11 @@ async function callOpenAI(messages: { role: string; content: string }[], pet: { 
 function StatBar({ label, value, color, emoji }: { label: string; value: number; color: string; emoji: string }) {
   return (
     <div style={{ marginBottom: '0.75rem' }}>
-      <div style={{ fontSize: '0.55rem', marginBottom: '0.3rem', display: 'flex', justifyContent: 'space-between' }}>
-        <span>{emoji} {label}</span><span>{value}%</span>
+      <div style={{ fontSize: '0.55rem', marginBottom: '0.3rem', display: 'flex', justifyContent: 'space-between', color: '#fff', fontFamily: "'Press Start 2P', monospace", textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+        <span>{emoji} {label}</span><span style={{ color }}>{value}%</span>
       </div>
-      <div style={{ background: '#0a0a1a', border: '3px solid #333', height: '20px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ width: `${value}%`, height: '100%', background: color, transition: 'width 0.3s', boxShadow: `0 0 8px ${color}80` }} />
+      <div className="stat-bar-track">
+        <div className="stat-bar-fill" style={{ width: `${value}%`, background: `linear-gradient(90deg, ${color}, ${color}cc)`, boxShadow: `0 0 12px ${color}60` }} />
       </div>
     </div>
   )
@@ -236,11 +283,13 @@ function ActionButton({ label, emoji, color, onClick, disabled, title }: {
   return (
     <button onClick={onClick} disabled={disabled} title={title} className="action-btn" style={{
       fontFamily: "'Press Start 2P', monospace", fontSize: '0.6rem', padding: '0.7rem 1rem',
-      background: disabled ? '#333' : color, color: disabled ? '#666' : '#fff',
-      border: '3px solid', borderColor: disabled ? '#444' : color,
+      background: disabled ? '#333' : `linear-gradient(135deg, ${color}, ${color}cc)`,
+      color: disabled ? '#666' : '#fff',
+      border: '2px solid', borderColor: disabled ? '#444' : `${color}88`,
+      borderRadius: '10px',
       cursor: disabled ? 'not-allowed' : 'pointer',
-      boxShadow: disabled ? 'none' : `4px 4px 0 rgba(0,0,0,0.5), 0 0 12px ${color}40`,
-      textShadow: disabled ? 'none' : '1px 1px 0 rgba(0,0,0,0.5)', transition: 'all 0.15s', flex: 1,
+      boxShadow: disabled ? 'none' : `0 4px 15px ${color}40`,
+      textShadow: disabled ? 'none' : '0 1px 3px rgba(0,0,0,0.4)', transition: 'all 0.2s', flex: 1,
     }}
       onMouseDown={e => { if (!disabled) (e.target as HTMLElement).style.transform = 'scale(0.95)' }}
       onMouseUp={e => (e.target as HTMLElement).style.transform = ''}
@@ -327,8 +376,8 @@ function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
 
   return (
     <div className="animate-fade-in" style={{ textAlign: 'center', padding: '1rem 0' }}>
-      <h1 style={{ fontSize: '1rem', marginBottom: '0.3rem', color: 'var(--border)' }}>🎮 REGEMON</h1>
-      <h2 style={{ fontSize: '0.65rem', color: 'var(--text)', marginBottom: '1.5rem' }}>Crea tu Regenmon</h2>
+      <h1 className="title-anime" style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>🎮 REGEMON</h1>
+      <h2 style={{ fontSize: '0.6rem', color: 'var(--sakura)', marginBottom: '1.5rem', fontFamily: "'M PLUS Rounded 1c', sans-serif", fontWeight: 700 }}>✨ Crea tu Regenmon ✨</h2>
 
       {/* Name input */}
       <div className="pixel-border" style={{
@@ -345,9 +394,9 @@ function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
           placeholder="Escribe un nombre..."
           style={{
             width: '100%', fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem',
-            padding: '0.6rem', background: '#0a0a1a', color: 'var(--text)',
-            border: `3px solid ${name.length > 0 ? (nameValid ? '#53d769' : '#e94560') : '#444'}`,
-            outline: 'none', boxSizing: 'border-box',
+            padding: '0.6rem', background: 'rgba(10,10,26,0.8)', color: 'var(--text)',
+            border: `2px solid ${name.length > 0 ? (nameValid ? 'var(--energy)' : 'var(--border)') : 'rgba(192,132,252,0.2)'}`,
+            borderRadius: '8px', outline: 'none', boxSizing: 'border-box',
           }}
         />
         <div style={{ fontSize: '0.35rem', color: nameValid ? '#53d769' : 'var(--text-dim)', marginTop: '0.3rem' }}>
@@ -380,7 +429,7 @@ function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
                 transition: 'all 0.2s',
               }}
             >
-              <pre style={{ fontSize: '0.4rem', lineHeight: 1.3, margin: 0 }}>{t.art.join('\n')}</pre>
+              <PixelPet typeId={t.id} size={70} />
               <div>
                 <div style={{ fontSize: '0.65rem', marginBottom: '0.3rem' }}>{t.emoji} {t.label}</div>
                 <div style={{ color: 'var(--text-dim)', fontSize: '0.4rem' }}>{t.desc}</div>
@@ -397,11 +446,12 @@ function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
         className="action-btn"
         style={{
           fontFamily: "'Press Start 2P', monospace", fontSize: '0.7rem', padding: '1rem 2rem',
-          background: canCreate ? 'var(--border)' : '#333',
+          background: canCreate ? 'linear-gradient(135deg, var(--border), var(--accent))' : '#333',
           color: canCreate ? '#fff' : '#666',
-          border: `4px solid ${canCreate ? 'var(--border)' : '#444'}`,
+          border: `3px solid ${canCreate ? 'var(--border)' : '#444'}`,
+          borderRadius: '12px',
           cursor: canCreate ? 'pointer' : 'not-allowed',
-          boxShadow: canCreate ? '4px 4px 0 rgba(0,0,0,0.5), 0 0 20px var(--border)' : 'none',
+          boxShadow: canCreate ? '0 4px 20px var(--border-glow), 0 0 30px var(--accent-glow)' : 'none',
           width: '100%',
           transition: 'all 0.2s',
         }}
@@ -497,21 +547,21 @@ function ChatSection({ pet, stats, setStats, coins, setCoins, userId, addHistory
   return (
     <div className="pixel-border" style={{
       background: 'var(--bg-card)', padding: '0.75rem', marginTop: '1rem',
-      borderColor: isHungryRage ? '#ff0000' : '#9b59b6',
+      borderColor: isHungryRage ? '#ff0000' : 'var(--accent)',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-        <div style={{ fontSize: '0.5rem', color: '#9b59b6' }}>💬 Chat con {pet.name}</div>
+        <div style={{ fontSize: '0.5rem', color: 'var(--accent)' }}>💬 Chat con {pet.name}</div>
         {memories.length > 0 && (
-          <div style={{ fontSize: '0.4rem', color: '#f39c12' }}>🧠 {memories.length} memorias</div>
+          <div style={{ fontSize: '0.4rem', color: 'var(--cyan)' }}>🧠 {memories.length} memorias</div>
         )}
       </div>
 
       <div style={{
         height: '200px', overflowY: 'auto', marginBottom: '0.5rem', padding: '0.25rem',
-        background: '#0a0a1a', border: '2px solid #333',
+        background: 'rgba(10,10,26,0.6)', border: '2px solid rgba(192,132,252,0.15)', borderRadius: '10px',
       }}>
         {messages.length === 0 && (
-          <div style={{ fontSize: '0.4rem', color: '#555', textAlign: 'center', marginTop: '4rem' }}>
+          <div style={{ fontSize: '0.4rem', color: 'var(--text-dim)', textAlign: 'center', marginTop: '4rem' }}>
             ¡Escribe algo para hablar con {pet.name}!
           </div>
         )}
@@ -522,10 +572,12 @@ function ChatSection({ pet, stats, setStats, coins, setCoins, userId, addHistory
           }}>
             <div style={{
               maxWidth: '80%', padding: '0.4rem 0.6rem', fontSize: '0.4rem', lineHeight: 1.6,
-              background: m.role === 'user' ? '#e91e63' : '#7b1fa2',
-              color: '#fff', borderRadius: '2px',
-              boxShadow: '2px 2px 0 rgba(0,0,0,0.4)',
-              border: `2px solid ${m.role === 'user' ? '#c2185b' : '#6a1b9a'}`,
+              background: m.role === 'user'
+                ? 'linear-gradient(135deg, #ff6b9d, #e91e63)'
+                : 'linear-gradient(135deg, #7c3aed, #a855f7)',
+              color: '#fff', borderRadius: '12px',
+              boxShadow: `0 2px 10px ${m.role === 'user' ? 'rgba(255,107,157,0.3)' : 'rgba(168,85,247,0.3)'}`,
+              border: 'none',
             }}>
               {m.content}
             </div>
@@ -534,8 +586,9 @@ function ChatSection({ pet, stats, setStats, coins, setCoins, userId, addHistory
         {typing && (
           <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '0.4rem' }}>
             <div className="typing-indicator" style={{
-              padding: '0.4rem 0.6rem', fontSize: '0.4rem', background: '#7b1fa2',
-              color: '#fff', borderRadius: '2px', border: '2px solid #6a1b9a',
+              padding: '0.4rem 0.6rem', fontSize: '0.4rem',
+              background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
+              color: '#fff', borderRadius: '12px', border: 'none',
             }}>
               Escribiendo<span className="typing-dots">...</span>
             </div>
@@ -550,14 +603,16 @@ function ChatSection({ pet, stats, setStats, coins, setCoins, userId, addHistory
           placeholder="Escribe un mensaje..."
           style={{
             flex: 1, fontFamily: "'Press Start 2P', monospace", fontSize: '0.4rem',
-            padding: '0.5rem', background: '#0a0a1a', color: 'var(--text)',
-            border: '3px solid #444', outline: 'none',
+            padding: '0.5rem', background: 'rgba(10,10,26,0.8)', color: 'var(--text)',
+            border: '2px solid rgba(192,132,252,0.2)', borderRadius: '8px', outline: 'none',
           }}
         />
-        <button onClick={sendMessage} disabled={typing || !input.trim()} style={{
+        <button onClick={sendMessage} disabled={typing || !input.trim()} className="action-btn" style={{
           fontFamily: "'Press Start 2P', monospace", fontSize: '0.4rem', padding: '0.5rem 0.8rem',
-          background: typing || !input.trim() ? '#333' : '#9b59b6', color: '#fff',
-          border: '3px solid', borderColor: typing || !input.trim() ? '#444' : '#8e44ad',
+          background: typing || !input.trim() ? '#333' : 'linear-gradient(135deg, var(--accent), var(--border))',
+          color: '#fff',
+          border: '2px solid', borderColor: typing || !input.trim() ? '#444' : 'var(--accent)',
+          borderRadius: '8px',
           cursor: typing || !input.trim() ? 'not-allowed' : 'pointer',
         }}>Enviar</button>
       </div>
@@ -891,7 +946,7 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
   const [feedback, setFeedback] = useState<{ text: string; type: 'processing' | 'success' | 'error' }>({ text: '', type: 'processing' })
   const [processing, setProcessing] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory(userId))
-  const [activeTab, setActiveTab] = useState<'pet' | 'train'>('pet')
+  const [activeTab, setActiveTab] = useState<'pet' | 'train' | 'social'>('pet')
   const msgTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const decayAccum = useRef({ hambre: 0, felicidad: 0, energia: 0 })
   const trainingData = loadTrainingData(userId)
@@ -999,34 +1054,48 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
       <div style={{ display: 'flex', marginBottom: '0.75rem', border: '3px solid #333' }}>
         <button onClick={() => setActiveTab('pet')} style={{
           fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', padding: '0.6rem', flex: 1,
-          background: activeTab === 'pet' ? 'var(--bg-card)' : '#0a0a1a',
-          color: activeTab === 'pet' ? '#e94560' : '#666', border: 'none', cursor: 'pointer',
-          borderBottom: activeTab === 'pet' ? '3px solid #e94560' : '3px solid transparent',
+          background: activeTab === 'pet' ? 'var(--bg-card)' : 'transparent',
+          color: activeTab === 'pet' ? 'var(--border)' : 'var(--text-dim)', border: 'none', cursor: 'pointer',
+          borderBottom: activeTab === 'pet' ? '3px solid var(--border)' : '3px solid transparent',
+          borderRadius: '8px 8px 0 0',
         }}>🐾 Mascota</button>
         <button onClick={() => setActiveTab('train')} style={{
           fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', padding: '0.6rem', flex: 1,
-          background: activeTab === 'train' ? 'var(--bg-card)' : '#0a0a1a',
-          color: activeTab === 'train' ? '#e94560' : '#666', border: 'none', cursor: 'pointer',
-          borderBottom: activeTab === 'train' ? '3px solid #e94560' : '3px solid transparent',
+          background: activeTab === 'train' ? 'var(--bg-card)' : 'transparent',
+          color: activeTab === 'train' ? 'var(--border)' : 'var(--text-dim)', border: 'none', cursor: 'pointer',
+          borderBottom: activeTab === 'train' ? '3px solid var(--border)' : '3px solid transparent',
+          borderRadius: '8px 8px 0 0',
         }}>🎓 Entrenar</button>
+        <button onClick={() => setActiveTab('social')} style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', padding: '0.6rem', flex: 1,
+          background: activeTab === 'social' ? 'var(--bg-card)' : 'transparent',
+          color: activeTab === 'social' ? 'var(--border)' : 'var(--text-dim)', border: 'none', cursor: 'pointer',
+          borderBottom: activeTab === 'social' ? '3px solid var(--border)' : '3px solid transparent',
+          borderRadius: '8px 8px 0 0',
+        }}>🌐 Social</button>
       </div>
 
       <Feedback text={feedback.text} type={feedback.type} />
 
-      {activeTab === 'train' ? (
+      {activeTab === 'social' ? (
+        <SocialTab pet={pet} stats={stats} coins={coins} setCoins={setCoins} userId={userId} />
+      ) : activeTab === 'train' ? (
         <TrainingTab pet={pet} userId={userId} coins={coins} setCoins={setCoins} setStats={setStats} />
       ) : (<>
-      <div className="pixel-border" style={{
-        background: isHungryRage ? '#1a0000' : 'var(--bg-card)',
+      <div className="pixel-border pet-display" style={{
+        background: isHungryRage
+          ? 'radial-gradient(ellipse at center, #2a0000, #1a0000)'
+          : `radial-gradient(ellipse at center bottom, ${pet.glow || 'rgba(192,132,252,0.1)'} 0%, var(--bg-card) 70%)`,
         padding: '1.5rem 1rem', marginBottom: '1rem',
         borderColor: isHungryRage ? '#ff0000' : pet.color,
         minHeight: '180px', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', position: 'relative',
+        boxShadow: `0 0 20px ${isHungryRage ? 'rgba(255,0,0,0.3)' : (pet.glow || 'rgba(192,132,252,0.2)')}`,
       }}>
-        <div style={{ fontSize: '0.6rem', marginBottom: '0.3rem', color: isHungryRage ? '#ff0000' : pet.color }}>
+        <div style={{ fontSize: '0.7rem', marginBottom: '0.3rem', color: isHungryRage ? '#ff4444' : '#fff', fontFamily: "'Press Start 2P', monospace", textShadow: `0 0 12px ${isHungryRage ? '#ff0000' : pet.color}` }}>
           {isHungryRage ? `🔥 ${pet.name} 🔥` : pet.name}
         </div>
-        <div style={{ fontSize: '0.35rem', color: '#f5c842', marginBottom: '0.5rem' }}>
+        <div style={{ fontSize: '0.35rem', color: 'var(--gold)', marginBottom: '0.5rem' }}>
           {stageInfo.emoji} {stageInfo.label} | {trainingData.totalPoints} pts
         </div>
         {isDead ? (
@@ -1035,11 +1104,9 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
             <p style={{ marginTop: '0.5rem', fontSize: '0.4rem' }}>¡Reinicia para intentarlo de nuevo!</p>
           </div>
         ) : (
-          <pre className={reacting ? 'animate-happy' : 'animate-idle'} style={{
-            fontSize: '0.55rem', lineHeight: 1.4, margin: 0,
-            color: isHungryRage ? '#ff0000' : pet.color,
-            filter: stats.energia < 20 ? 'brightness(0.5)' : 'none',
-          }}>{pet.art.join('\n')}</pre>
+          <div className={reacting ? 'animate-happy' : 'animate-idle'}>
+            <PixelPet typeId={pet.typeId} size={160} dead={isDead} dim={stats.energia < 20} />
+          </div>
         )}
         {isHungryRage && !isDead && (
           <div style={{ fontSize: '0.5rem', color: '#ff4444', marginTop: '0.3rem' }}>
@@ -1049,7 +1116,8 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
         {message && (
           <div style={{
             position: 'absolute', bottom: '8px', fontSize: '0.5rem', color: '#fff',
-            background: 'rgba(0,0,0,0.7)', padding: '0.3rem 0.6rem', borderRadius: '2px',
+            background: 'rgba(0,0,0,0.6)', padding: '0.3rem 0.6rem', borderRadius: '10px',
+            backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.1)',
           }}>{message}</div>
         )}
       </div>
