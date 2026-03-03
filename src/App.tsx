@@ -1,35 +1,70 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { usePrivy } from '@privy-io/react-auth'
 import { PETS, type PetDef } from './pets'
 
+/* ─── Types ─── */
 type Stats = { hambre: number; felicidad: number; energia: number }
 type ChatMsg = { role: 'user' | 'assistant'; content: string; id: number }
 type Memory = { key: string; value: string }
-type StatFloat = { id: number; text: string; x: number }
+type StatFloat = { id: number; text: string; x: number; color?: string }
+type HistoryEntry = { action: string; coins: number; time: number }
 
+/* ─── Constants ─── */
 const DECAY_INTERVAL = 2000
-// Each stat decays at different rates for realistic gameplay
-const DECAY_HAMBRE = 1.5   // hunger drops fastest
-const DECAY_FELICIDAD = 0.8 // happiness drops medium
-const DECAY_ENERGIA = 1.0   // energy drops steady
+const DECAY_HAMBRE = 1.5
+const DECAY_FELICIDAD = 0.8
+const DECAY_ENERGIA = 1.0
 const MAX_MESSAGES = 20
+const FEED_COST = 10
+const INITIAL_COINS = 100
+const MAX_HISTORY = 10
 
 let msgIdCounter = Date.now()
 
 function clamp(v: number) { return Math.max(0, Math.min(100, v)) }
 
-function loadMessages(petId: string): ChatMsg[] {
-  try { return JSON.parse(localStorage.getItem(`regemon-chat-${petId}`) || '[]') } catch { return [] }
-}
-function saveMessages(petId: string, msgs: ChatMsg[]) {
-  localStorage.setItem(`regemon-chat-${petId}`, JSON.stringify(msgs.slice(-MAX_MESSAGES)))
-}
-function loadMemories(petId: string): Memory[] {
-  try { return JSON.parse(localStorage.getItem(`regemon-memories-${petId}`) || '[]') } catch { return [] }
-}
-function saveMemories(petId: string, mems: Memory[]) {
-  localStorage.setItem(`regemon-memories-${petId}`, JSON.stringify(mems))
+/* ─── Storage helpers (keyed by userId) ─── */
+function storageKey(base: string, userId?: string | null, petId?: string) {
+  const prefix = userId ? `regemon-${userId}` : 'regemon-anon'
+  return petId ? `${prefix}-${base}-${petId}` : `${prefix}-${base}`
 }
 
+function loadJSON<T>(key: string, fallback: T): T {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback } catch { return fallback }
+}
+
+function loadMessages(petId: string, userId?: string | null): ChatMsg[] {
+  return loadJSON(storageKey('chat', userId, petId), [])
+}
+function saveMessages(petId: string, msgs: ChatMsg[], userId?: string | null) {
+  localStorage.setItem(storageKey('chat', userId, petId), JSON.stringify(msgs.slice(-MAX_MESSAGES)))
+}
+function loadMemories(petId: string, userId?: string | null): Memory[] {
+  return loadJSON(storageKey('memories', userId, petId), [])
+}
+function saveMemories(petId: string, mems: Memory[], userId?: string | null) {
+  localStorage.setItem(storageKey('memories', userId, petId), JSON.stringify(mems))
+}
+function loadCoins(userId?: string | null): number {
+  return loadJSON(storageKey('coins', userId), INITIAL_COINS)
+}
+function saveCoins(coins: number, userId?: string | null) {
+  localStorage.setItem(storageKey('coins', userId), JSON.stringify(coins))
+}
+function loadHistory(userId?: string | null): HistoryEntry[] {
+  return loadJSON(storageKey('history', userId), [])
+}
+function saveHistory(history: HistoryEntry[], userId?: string | null) {
+  localStorage.setItem(storageKey('history', userId), JSON.stringify(history.slice(-MAX_HISTORY)))
+}
+function loadStats(petId: string, userId?: string | null): Stats | null {
+  return loadJSON(storageKey('stats', userId, petId), null)
+}
+function saveStats(petId: string, stats: Stats, userId?: string | null) {
+  localStorage.setItem(storageKey('stats', userId, petId), JSON.stringify(stats))
+}
+
+/* ─── Memory extraction ─── */
 function extractMemories(text: string, existing: Memory[]): Memory[] {
   const newMems: Memory[] = [...existing]
   const patterns = [
@@ -52,30 +87,37 @@ function extractMemories(text: string, existing: Memory[]): Memory[] {
   return newMems
 }
 
+/* ─── Coin earning logic with diminishing returns ─── */
+function calcCoinEarning(currentCoins: number): number {
+  if (currentCoins >= 100) return 0
+  // As coins approach 100, chance and amount decrease
+  const ratio = currentCoins / 100
+  const chance = 1 - ratio * 0.8 // at 0 coins: 100% chance, at 100: 20% chance
+  if (Math.random() > chance) return 0
+  const maxEarn = Math.max(1, Math.floor(5 * (1 - ratio)))
+  return Math.floor(Math.random() * maxEarn) + 1 // 1..maxEarn
+}
+
+/* ─── System prompt ─── */
 function buildSystemPrompt(pet: PetDef, stats: Stats, memories: Memory[]): string {
-  let prompt = `Eres ${pet.name}, una mascota virtual tipo ${pet.desc}. Responde SIEMPRE en español. Eres amigable, juguetón y hablas como mascota virtual. Máximo 50 palabras. Usa emojis ocasionalmente.
-
-Stats actuales: Hambre=${stats.hambre}%, Felicidad=${stats.felicidad}%, Energía=${stats.energia}%.`
-
+  let prompt = `Eres ${pet.name}, una mascota virtual tipo ${pet.desc}. Responde SIEMPRE en español. Eres amigable, juguetón y hablas como mascota virtual. Máximo 50 palabras. Usa emojis ocasionalmente.\n\nStats actuales: Hambre=${stats.hambre}%, Felicidad=${stats.felicidad}%, Energía=${stats.energia}%.`
   if (stats.energia < 30) prompt += '\nEstás MUY cansado. Menciona que tienes sueño, responde más corto.'
   if (stats.felicidad > 70) prompt += '\nEstás MUY feliz y entusiasmado. Usa más emojis y exclamaciones!'
   if (stats.hambre < 10) prompt += '\nTienes MUCHÍSIMA hambre. Estás FURIOSO. Maldice (censurado con *), pide comida AGRESIVAMENTE, estás ROJO DE IRA. 🔥🔥🔥'
   else if (stats.hambre < 30) prompt += '\nTienes hambre. Menciona que quieres comida, pide que te alimenten.'
-
   if (memories.length > 0) {
     prompt += '\n\nRecuerdos sobre tu dueño:'
     for (const m of memories) prompt += `\n- ${m.key}: ${m.value}`
     prompt += '\nUsa estos recuerdos naturalmente en la conversación cuando sea relevante.'
   }
-
   return prompt
 }
 
+/* ─── Smart fallback ─── */
 function generateSmartFallback(userText: string, pet: { name: string }, stats: Stats, memories: Memory[]): string {
   const lower = userText.toLowerCase().trim()
   const nombre = memories.find(m => m.key === 'nombre_usuario')?.value
 
-  // Rage mode
   if (stats.hambre < 10) {
     const rage = [
       `¡¡¡TENGO HAMBRE!!! 🔥😡 ¡DAME COMIDA YA! ¡No quiero hablar, quiero COMER!`,
@@ -84,8 +126,6 @@ function generateSmartFallback(userText: string, pet: { name: string }, stats: S
     ]
     return rage[Math.floor(Math.random() * rage.length)]
   }
-
-  // Tired mode
   if (stats.energia < 30) {
     const tired = [
       `Zzz... perdón${nombre ? ` ${nombre}` : ''}... estoy muy cansado... 😴💤`,
@@ -94,16 +134,12 @@ function generateSmartFallback(userText: string, pet: { name: string }, stats: S
     ]
     return tired[Math.floor(Math.random() * tired.length)]
   }
-
-  // Hungry mode
   if (stats.hambre < 30) {
     if (lower.includes('comida') || lower.includes('comer') || lower.includes('hambre') || lower.includes('alimenta')) {
       return `¡¡SÍ POR FAVOR!! 🍔🍕🍟 ¡Dame de comer! ¡Dale al botón de Alimentar! 🙏`
     }
     return `Mmm... tengo hambre${nombre ? ` ${nombre}` : ''}... 🍖 ¿Me das de comer? ¡Dale al botón de Alimentar! 😋`
   }
-
-  // Greetings
   if (/^(hola|hey|hi|hello|buenas|qué tal|que tal|regm|ey|saludos)/i.test(lower)) {
     const happy = stats.felicidad > 70
     const greets = happy
@@ -113,51 +149,24 @@ function generateSmartFallback(userText: string, pet: { name: string }, stats: S
          `¡Hey${nombre ? ` ${nombre}` : ''}! 😊 ¿Qué onda? ¡Aquí andamos!`]
     return greets[Math.floor(Math.random() * greets.length)]
   }
-
-  // Name introduction
   if (/me llamo|mi nombre es|soy \w+/i.test(lower)) {
     const name = lower.match(/(?:me llamo|mi nombre es|soy) (\w+)/i)?.[1]
     if (name) return `¡Mucho gusto, ${name}! 🐾✨ Yo soy ${pet.name}, ¡tu compañero virtual! ¡Lo recordaré! 🧠`
   }
-
-  // Questions about the pet
   if (/cómo estás|como estas|qué tal estás|cómo te sientes/i.test(lower)) {
     if (stats.felicidad > 70) return `¡Estoy INCREÍBLE! 🎉😍 ¡Muy feliz! Hambre: ${stats.hambre}%, Energía: ${stats.energia}%`
     if (stats.felicidad < 30) return `Mmm... no muy bien 😢 Estoy un poco triste... ¿jugamos? 🎮 Eso me animaría...`
     return `¡Estoy bien! 😊 Hambre: ${stats.hambre}%, Felicidad: ${stats.felicidad}%, Energía: ${stats.energia}% 🐾`
   }
-
-  // Questions about what pet can do
   if (/qué puedes hacer|que puedes hacer|qué haces|que haces|ayuda|help/i.test(lower)) {
     return `¡Puedo charlar contigo! 💬 También me puedes Alimentar 🍔, Jugar 🎮 o dejarme Descansar 💤 con los botones de arriba 😊`
   }
+  if (/jugar|juego|divertir|aburrido|diviérteme/i.test(lower)) return `¡SÍ! ¡Vamos a jugar! 🎮🎉 ¡Dale al botón de Jugar! ¡Me encanta! ✨`
+  if (/comida|comer|hambre|alimenta|pizza|tacos|hamburgues/i.test(lower)) return `¡Ñam ñam! 🍔🍕 ¡Me encanta la comida! ¡Dale al botón de Alimentar y me pongo feliz! 😋`
+  if (/dormir|sueño|cansado|descansar|noche/i.test(lower)) return `Mmm sí... un descansito no estaría mal 💤😴 ¡Dale al botón de Descansar! Zzz...`
+  if (/te quiero|te amo|cariño|lindo|bonito|cute|hermoso/i.test(lower)) return `¡¡Awww!! 😍❤️✨ ¡Yo también te quiero${nombre ? ` ${nombre}` : ''}! ¡Eres el mejor dueño! 🐾💕`
+  if (/tonto|feo|malo|odio|apestas|horrible/i.test(lower)) return `¡Oye! 😤 Eso no se dice... ¡pero no me importa porque soy adorable! 🐾✨ ¡Jiji!`
 
-  // Play/fun
-  if (/jugar|juego|divertir|aburrido|diviérteme/i.test(lower)) {
-    return `¡SÍ! ¡Vamos a jugar! 🎮🎉 ¡Dale al botón de Jugar! ¡Me encanta! ✨`
-  }
-
-  // Food/eating
-  if (/comida|comer|hambre|alimenta|pizza|tacos|hamburgues/i.test(lower)) {
-    return `¡Ñam ñam! 🍔🍕 ¡Me encanta la comida! ¡Dale al botón de Alimentar y me pongo feliz! 😋`
-  }
-
-  // Sleep/rest
-  if (/dormir|sueño|cansado|descansar|noche/i.test(lower)) {
-    return `Mmm sí... un descansito no estaría mal 💤😴 ¡Dale al botón de Descansar! Zzz...`
-  }
-
-  // Love/affection
-  if (/te quiero|te amo|cariño|lindo|bonito|cute|hermoso/i.test(lower)) {
-    return `¡¡Awww!! 😍❤️✨ ¡Yo también te quiero${nombre ? ` ${nombre}` : ''}! ¡Eres el mejor dueño! 🐾💕`
-  }
-
-  // Insults (playful response)
-  if (/tonto|feo|malo|odio|apestas|horrible/i.test(lower)) {
-    return `¡Oye! 😤 Eso no se dice... ¡pero no me importa porque soy adorable! 🐾✨ ¡Jiji!`
-  }
-
-  // Catch-all with personality based on happiness
   const happy = stats.felicidad > 70
   const general = happy
     ? [`¡Jiji! 😄✨ ¡Me encanta hablar contigo${nombre ? ` ${nombre}` : ''}! ¡Cuéntame más! 🎉`,
@@ -176,7 +185,6 @@ async function callOpenAI(messages: { role: string; content: string }[], pet: { 
     await new Promise(r => setTimeout(r, 600 + Math.random() * 800))
     return generateSmartFallback(userMsg, pet, stats, memories)
   }
-
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -185,6 +193,8 @@ async function callOpenAI(messages: { role: string; content: string }[], pet: { 
   const data = await res.json()
   return data.choices?.[0]?.message?.content || '¡No pude pensar en nada! 🤯'
 }
+
+/* ─── Components ─── */
 
 function StatBar({ label, value, color, emoji }: { label: string; value: number; color: string; emoji: string }) {
   return (
@@ -199,22 +209,85 @@ function StatBar({ label, value, color, emoji }: { label: string; value: number;
   )
 }
 
-function ActionButton({ label, emoji, color, onClick, disabled }: {
-  label: string; emoji: string; color: string; onClick: () => void; disabled?: boolean
+function ActionButton({ label, emoji, color, onClick, disabled, title }: {
+  label: string; emoji: string; color: string; onClick: () => void; disabled?: boolean; title?: string
 }) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{
+    <button onClick={onClick} disabled={disabled} title={title} className="action-btn" style={{
       fontFamily: "'Press Start 2P', monospace", fontSize: '0.6rem', padding: '0.7rem 1rem',
       background: disabled ? '#333' : color, color: disabled ? '#666' : '#fff',
       border: '3px solid', borderColor: disabled ? '#444' : color,
       cursor: disabled ? 'not-allowed' : 'pointer',
       boxShadow: disabled ? 'none' : `4px 4px 0 rgba(0,0,0,0.5), 0 0 12px ${color}40`,
-      textShadow: disabled ? 'none' : '1px 1px 0 rgba(0,0,0,0.5)', transition: 'transform 0.1s', flex: 1,
+      textShadow: disabled ? 'none' : '1px 1px 0 rgba(0,0,0,0.5)', transition: 'all 0.15s', flex: 1,
     }}
       onMouseDown={e => { if (!disabled) (e.target as HTMLElement).style.transform = 'scale(0.95)' }}
       onMouseUp={e => (e.target as HTMLElement).style.transform = ''}
       onMouseLeave={e => (e.target as HTMLElement).style.transform = ''}
     >{emoji}<br />{label}</button>
+  )
+}
+
+function Header({ coins, userId: _userId }: { coins: number; userId: string | null }) {
+  const { login, logout, authenticated, user } = usePrivy()
+
+  const displayName = user?.google?.name || user?.email?.address || user?.google?.email || null
+
+  return (
+    <div className="header-bar">
+      <div className="header-coins">
+        {authenticated ? `🍊 ${coins} $FRUTA` : '🍊 — $FRUTA'}
+      </div>
+      <div className="header-right">
+        {authenticated && displayName && (
+          <span className="header-user">{displayName}</span>
+        )}
+        {authenticated ? (
+          <button onClick={logout} className="header-btn">Cerrar Sesión</button>
+        ) : (
+          <button onClick={login} className="header-btn header-btn-login">Iniciar Sesión</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function HistoryPanel({ history }: { history: HistoryEntry[] }) {
+  const [open, setOpen] = useState(false)
+  if (history.length === 0) return null
+
+  return (
+    <div className="pixel-border" style={{ background: 'var(--bg-card)', padding: '0.75rem', marginTop: '1rem', borderColor: '#555' }}>
+      <button onClick={() => setOpen(!open)} style={{
+        fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', background: 'none',
+        color: 'var(--text-dim)', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left',
+      }}>
+        {open ? '▼' : '▶'} Historial ({history.length})
+      </button>
+      {open && (
+        <div style={{ marginTop: '0.5rem' }}>
+          {[...history].reverse().map((h, i) => (
+            <div key={i} style={{ fontSize: '0.35rem', color: 'var(--text-dim)', padding: '0.3rem 0', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{h.action}</span>
+              <span style={{ color: h.coins >= 0 ? '#53d769' : '#e94560' }}>
+                {h.coins >= 0 ? '+' : ''}{h.coins} 🍊
+              </span>
+              <span>{new Date(h.time).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Feedback({ text, type }: { text: string; type: 'processing' | 'success' | 'error' }) {
+  if (!text) return null
+  const color = type === 'error' ? '#e94560' : type === 'success' ? '#53d769' : '#f5c842'
+  return (
+    <div className="feedback-bar" style={{ color, borderColor: color }}>
+      {type === 'processing' && '⏳ '}{text}
+    </div>
   )
 }
 
@@ -225,7 +298,7 @@ function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
       <p style={{ fontSize: '0.5rem', color: 'var(--text-dim)', marginBottom: '1.5rem' }}>Elige tu compañero</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {PETS.map(p => (
-          <button key={p.id} onClick={() => onSelect(p)} className="pixel-border" style={{
+          <button key={p.id} onClick={() => onSelect(p)} className="pixel-border pet-select-btn" style={{
             fontFamily: "'Press Start 2P', monospace", fontSize: '0.5rem', padding: '1rem',
             background: 'var(--bg-card)', color: p.color, cursor: 'pointer', textAlign: 'left',
             display: 'flex', gap: '1rem', alignItems: 'center', borderColor: p.color,
@@ -242,23 +315,27 @@ function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
   )
 }
 
-function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setStats: React.Dispatch<React.SetStateAction<Stats>> }) {
-  const [messages, setMessages] = useState<ChatMsg[]>(() => loadMessages(pet.id))
+function ChatSection({ pet, stats, setStats, coins, setCoins, userId, addHistoryEntry }: {
+  pet: PetDef; stats: Stats; setStats: React.Dispatch<React.SetStateAction<Stats>>;
+  coins: number; setCoins: React.Dispatch<React.SetStateAction<number>>;
+  userId: string | null; addHistoryEntry: (action: string, coinsDelta: number) => void
+}) {
+  const [messages, setMessages] = useState<ChatMsg[]>(() => loadMessages(pet.id, userId))
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
-  const [memories, setMemories] = useState<Memory[]>(() => loadMemories(pet.id))
+  const [memories, setMemories] = useState<Memory[]>(() => loadMemories(pet.id, userId))
   const [floats, setFloats] = useState<StatFloat[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
   const consecutiveRef = useRef(0)
 
-  useEffect(() => { saveMessages(pet.id, messages) }, [messages, pet.id])
-  useEffect(() => { saveMemories(pet.id, memories) }, [memories, pet.id])
+  useEffect(() => { saveMessages(pet.id, messages, userId) }, [messages, pet.id, userId])
+  useEffect(() => { saveMemories(pet.id, memories, userId) }, [memories, pet.id, userId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, typing])
 
-  const addFloat = (text: string) => {
-    const id = Date.now()
+  const addFloat = (text: string, color?: string) => {
+    const id = Date.now() + Math.random()
     const x = 20 + Math.random() * 60
-    setFloats(f => [...f, { id, text, x }])
+    setFloats(f => [...f, { id, text, x, color }])
     setTimeout(() => setFloats(f => f.filter(fl => fl.id !== id)), 1500)
   }
 
@@ -269,7 +346,6 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
     if (!text || typing) return
     setInput('')
 
-    // Extract memories
     const newMems = extractMemories(text, memories)
     if (newMems.length !== memories.length) setMemories(newMems)
 
@@ -277,17 +353,24 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
     const newMsgs = [...messages, userMsg].slice(-MAX_MESSAGES)
     setMessages(newMsgs)
 
-    // Stats: Felicidad +5, Energía -2
     consecutiveRef.current++
     let energyPenalty = 2
     if (consecutiveRef.current >= 5) energyPenalty += 3
-    setStats(s => {
-      const ns = { ...s, felicidad: clamp(s.felicidad + 5), energia: clamp(s.energia - energyPenalty) }
-      return ns
-    })
+    setStats(s => ({
+      ...s,
+      felicidad: clamp(s.felicidad + 5),
+      energia: clamp(s.energia - energyPenalty),
+    }))
     addFloat('+5 Felicidad 😊')
-    if (energyPenalty > 2) addFloat(`-${energyPenalty} Energía ⚡`)
-    else addFloat('-2 Energía ⚡')
+    addFloat(`-${energyPenalty} Energía ⚡`)
+
+    // Earn coins
+    const earned = calcCoinEarning(coins)
+    if (earned > 0) {
+      setCoins(c => { const nc = Math.min(c + earned, 150); saveCoins(nc, userId); return nc })
+      addFloat(`+${earned} 🍊`, '#53d769')
+      addHistoryEntry(`Chat: "${text.slice(0, 20)}..."`, earned)
+    }
 
     setTyping(true)
     try {
@@ -319,7 +402,6 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
         )}
       </div>
 
-      {/* Messages */}
       <div style={{
         height: '200px', overflowY: 'auto', marginBottom: '0.5rem', padding: '0.25rem',
         background: '#0a0a1a', border: '2px solid #333',
@@ -358,7 +440,6 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
         <div ref={chatEndRef} />
       </div>
 
-      {/* Input */}
       <div style={{ display: 'flex', gap: '0.3rem' }}>
         <input
           value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
@@ -377,10 +458,10 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
         }}>Enviar</button>
       </div>
 
-      {/* Floating stat changes */}
       {floats.map(f => (
         <div key={f.id} className="stat-float" style={{
-          position: 'fixed', left: `${f.x}%`, fontSize: '0.5rem', color: '#f5c842',
+          position: 'fixed', left: `${f.x}%`, fontSize: '0.5rem',
+          color: f.color || '#f5c842',
           pointerEvents: 'none', zIndex: 999, fontFamily: "'Press Start 2P', monospace",
         }}>{f.text}</div>
       ))}
@@ -388,13 +469,22 @@ function ChatSection({ pet, stats, setStats }: { pet: PetDef; stats: Stats; setS
   )
 }
 
-function PetView({ pet, onReset }: { pet: PetDef; onReset: () => void }) {
-  const [stats, setStats] = useState<Stats>({ hambre: 75, felicidad: 90, energia: 60 })
+function PetView({ pet, onReset, coins, setCoins, userId }: {
+  pet: PetDef; onReset: () => void; coins: number;
+  setCoins: React.Dispatch<React.SetStateAction<number>>; userId: string | null
+}) {
+  const [stats, setStats] = useState<Stats>(() => loadStats(pet.id, userId) || { hambre: 75, felicidad: 90, energia: 60 })
   const [reacting, setReacting] = useState(false)
   const [message, setMessage] = useState('')
+  const [feedback, setFeedback] = useState<{ text: string; type: 'processing' | 'success' | 'error' }>({ text: '', type: 'processing' })
+  const [processing, setProcessing] = useState(false)
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory(userId))
   const msgTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const decayAccum = useRef({ hambre: 0, felicidad: 0, energia: 0 })
+
+  // Persist stats
+  useEffect(() => { saveStats(pet.id, stats, userId) }, [stats, pet.id, userId])
+  useEffect(() => { saveHistory(history, userId) }, [history, userId])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -424,22 +514,73 @@ function PetView({ pet, onReset }: { pet: PetDef; onReset: () => void }) {
     msgTimeout.current = setTimeout(() => { setMessage(''); setReacting(false) }, 1200)
   }, [])
 
-  const feed = () => { setStats(s => ({ ...s, hambre: clamp(s.hambre + 20), energia: clamp(s.energia + 5) })); showMsg('¡Ñam ñam! 🍔') }
-  const play = () => { setStats(s => ({ ...s, felicidad: clamp(s.felicidad + 20), hambre: clamp(s.hambre - 5), energia: clamp(s.energia - 10) })); showMsg('¡Yujuu! 🎉') }
-  const rest = () => { setStats(s => ({ ...s, energia: clamp(s.energia + 25), felicidad: clamp(s.felicidad + 5) })); showMsg('Zzz... 💤') }
+  const showFeedback = (text: string, type: 'processing' | 'success' | 'error') => {
+    setFeedback({ text, type })
+    if (type !== 'processing') setTimeout(() => setFeedback({ text: '', type: 'processing' }), 2000)
+  }
+
+  const addHistoryEntry = (action: string, coinsDelta: number) => {
+    setHistory(h => [...h, { action, coins: coinsDelta, time: Date.now() }].slice(-MAX_HISTORY))
+  }
+
+  const feed = async () => {
+    if (processing) return
+    if (stats.hambre >= 95) { showFeedback('¡Tu mascota no tiene hambre!', 'error'); return }
+    if (coins < FEED_COST) { showFeedback('Necesitas 10 🍊 — ¡chatea para ganar!', 'error'); return }
+
+    setProcessing(true)
+    showFeedback('Procesando...', 'processing')
+    await new Promise(r => setTimeout(r, 400))
+
+    setCoins(c => { const nc = c - FEED_COST; saveCoins(nc, userId); return nc })
+    setStats(s => ({ ...s, hambre: clamp(s.hambre + 20), energia: clamp(s.energia + 5) }))
+    showMsg('¡Ñam ñam! 🍔')
+    showFeedback('¡Listo!', 'success')
+    addHistoryEntry('Alimentar', -FEED_COST)
+    setProcessing(false)
+  }
+
+  const play = async () => {
+    if (processing) return
+    setProcessing(true)
+    showFeedback('Procesando...', 'processing')
+    await new Promise(r => setTimeout(r, 400))
+
+    setStats(s => ({ ...s, felicidad: clamp(s.felicidad + 20), hambre: clamp(s.hambre - 5), energia: clamp(s.energia - 10) }))
+    showMsg('¡Yujuu! 🎉')
+    showFeedback('¡Listo!', 'success')
+    addHistoryEntry('Jugar', 0)
+    setProcessing(false)
+  }
+
+  const rest = async () => {
+    if (processing) return
+    setProcessing(true)
+    showFeedback('Procesando...', 'processing')
+    await new Promise(r => setTimeout(r, 400))
+
+    setStats(s => ({ ...s, energia: clamp(s.energia + 25), felicidad: clamp(s.felicidad + 5) }))
+    showMsg('Zzz... 💤')
+    showFeedback('¡Listo!', 'success')
+    addHistoryEntry('Descansar', 0)
+    setProcessing(false)
+  }
 
   const isDead = stats.hambre === 0 && stats.felicidad === 0 && stats.energia === 0
   const isHungryRage = stats.hambre < 10
+  const canFeed = coins >= FEED_COST && stats.hambre < 95
 
   return (
     <div className="animate-fade-in" style={{ textAlign: 'center', padding: '0.5rem 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
         <h1 style={{ fontSize: '0.8rem', color: isHungryRage ? '#ff0000' : pet.color }}>🎮 REGEMON</h1>
-        <button onClick={onReset} style={{
+        <button onClick={onReset} className="action-btn" style={{
           fontFamily: "'Press Start 2P', monospace", fontSize: '0.4rem', padding: '0.4rem 0.6rem',
           background: 'transparent', color: 'var(--text-dim)', border: '2px solid #444', cursor: 'pointer',
         }}>↩ Cambiar</button>
       </div>
+
+      <Feedback text={feedback.text} type={feedback.type} />
 
       <div className="pixel-border" style={{
         background: isHungryRage ? '#1a0000' : 'var(--bg-card)',
@@ -483,21 +624,52 @@ function PetView({ pet, onReset }: { pet: PetDef; onReset: () => void }) {
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <ActionButton label="Alimentar" emoji="🍔" color="var(--btn-feed)" onClick={feed} disabled={isDead} />
-        <ActionButton label="Jugar" emoji="🎮" color="#c5a200" onClick={play} disabled={isDead} />
-        <ActionButton label="Descansar" emoji="💤" color="var(--btn-rest)" onClick={rest} disabled={isDead} />
+        <ActionButton
+          label={`Alimentar (${FEED_COST} 🍊)`}
+          emoji="🍔" color="var(--btn-feed)" onClick={feed}
+          disabled={isDead || processing || !canFeed}
+          title={coins < FEED_COST ? 'Necesitas 10 🍊 — ¡chatea para ganar!' : undefined}
+        />
+        <ActionButton label="Jugar" emoji="🎮" color="#c5a200" onClick={play} disabled={isDead || processing} />
+        <ActionButton label="Descansar" emoji="💤" color="var(--btn-rest)" onClick={rest} disabled={isDead || processing} />
       </div>
 
-      {!isDead && <ChatSection pet={pet} stats={stats} setStats={setStats} />}
+      {!isDead && (
+        <ChatSection
+          pet={pet} stats={stats} setStats={setStats}
+          coins={coins} setCoins={setCoins} userId={userId}
+          addHistoryEntry={addHistoryEntry}
+        />
+      )}
+
+      <HistoryPanel history={history} />
 
       <p style={{ fontSize: '0.35rem', color: '#555', marginTop: '1rem' }}>
-        Frutero Club — VibeCoding Bootcamp S2
+        Frutero Club — VibeCoding Bootcamp S3
       </p>
     </div>
   )
 }
 
 export default function App() {
+  const { authenticated, user } = usePrivy()
+  const userId = authenticated ? (user?.email?.address || user?.google?.email || user?.id || null) : null
   const [pet, setPet] = useState<PetDef | null>(null)
-  return pet ? <PetView pet={pet} onReset={() => setPet(null)} /> : <PetSelect onSelect={setPet} />
+  const [coins, setCoins] = useState(() => loadCoins(userId))
+
+  // Reload coins when user changes
+  useEffect(() => {
+    setCoins(loadCoins(userId))
+  }, [userId])
+
+  return (
+    <>
+      <Header coins={coins} userId={userId} />
+      {pet ? (
+        <PetView pet={pet} onReset={() => setPet(null)} coins={coins} setCoins={setCoins} userId={userId} />
+      ) : (
+        <PetSelect onSelect={setPet} />
+      )}
+    </>
+  )
 }
