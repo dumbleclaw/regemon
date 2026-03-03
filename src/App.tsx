@@ -79,8 +79,8 @@ function getStageInfo(pts: number): { stage: number; emoji: string; label: strin
 }
 
 const TRAINING_CATEGORIES: { id: TrainingCategory; emoji: string; label: string; desc: string; criteria: string }[] = [
-  { id: 'codigo', emoji: '💻', label: 'Código', desc: 'Tu mejor código', criteria: 'organización del código, buenas prácticas, complejidad y limpieza' },
-  { id: 'diseno', emoji: '🎨', label: 'Diseño', desc: 'UI/UX o gráfico', criteria: 'estética, uso de colores, tipografía y creatividad' },
+  { id: 'codigo', emoji: '💻', label: 'Tareas', desc: 'Tu mejor trabajo', criteria: 'organización, buenas prácticas, complejidad y limpieza' },
+  { id: 'diseno', emoji: '🎨', label: 'Que cool', desc: 'UI/UX, gráfico, diseño, etc', criteria: 'estética, uso de colores, tipografía y creatividad' },
   { id: 'proyecto', emoji: '🚀', label: 'Proyecto', desc: 'Proyecto completo', criteria: 'funcionalidad, calidad general y complejidad del proyecto' },
   { id: 'aprendizaje', emoji: '📚', label: 'Aprendizaje', desc: 'Notas o ejercicios', criteria: 'esfuerzo, comprensión del tema y aplicación práctica' },
 ]
@@ -758,9 +758,9 @@ function TrainingTab({ pet, userId, coins, setCoins, setStats }: {
         {TRAINING_CATEGORIES.map(cat => (
           <button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className="pixel-border" style={{
             fontFamily: "'Press Start 2P', monospace", fontSize: '0.4rem', padding: '0.6rem',
-            background: selectedCategory === cat.id ? '#e9456030' : 'var(--bg)',
-            color: selectedCategory === cat.id ? '#e94560' : 'var(--text-dim)',
-            borderColor: selectedCategory === cat.id ? '#e94560' : '#333',
+            background: selectedCategory === cat.id ? '#4fc3f730' : 'var(--bg)',
+            color: selectedCategory === cat.id ? '#4fc3f7' : 'var(--text-dim)',
+            borderColor: selectedCategory === cat.id ? '#4fc3f7' : '#333',
             cursor: 'pointer', textAlign: 'center',
           }}>
             <div style={{ fontSize: '1rem', marginBottom: '0.3rem' }}>{cat.emoji}</div>
@@ -776,13 +776,13 @@ function TrainingTab({ pet, userId, coins, setCoins, setStats }: {
         <button onClick={() => { if (!selectedCategory) { alert('Selecciona una categoría primero'); return }; fileRef.current?.click() }}
           className="action-btn" style={{
             fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem', padding: '0.8rem',
-            background: selectedCategory ? '#e94560' : '#333', color: selectedCategory ? '#fff' : '#666',
-            border: `3px solid ${selectedCategory ? '#e94560' : '#444'}`, cursor: selectedCategory ? 'pointer' : 'not-allowed',
+            background: selectedCategory ? '#4fc3f7' : '#333', color: selectedCategory ? '#fff' : '#666',
+            border: `3px solid ${selectedCategory ? '#4fc3f7' : '#444'}`, cursor: selectedCategory ? 'pointer' : 'not-allowed',
             width: '100%', boxShadow: selectedCategory ? '4px 4px 0 rgba(0,0,0,0.5)' : 'none',
           }}>📸 Subir Captura</button>
       ) : (
         <div>
-          <div className="pixel-border" style={{ borderColor: '#e94560', overflow: 'hidden', marginBottom: '0.5rem' }}>
+          <div className="pixel-border" style={{ borderColor: '#4fc3f7', overflow: 'hidden', marginBottom: '0.5rem' }}>
             <img src={imagePreview} alt="preview" style={{ width: '100%', height: '300px', objectFit: 'contain', background: '#0a0a1a', display: 'block', imageRendering: 'auto' }} />
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
