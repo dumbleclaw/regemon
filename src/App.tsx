@@ -734,24 +734,43 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
   )
 }
 
+function loadPet(userId?: string | null): PetDef | null {
+  return loadJSON(storageKey('pet', userId), null)
+}
+function savePet(pet: PetDef | null, userId?: string | null) {
+  if (pet) localStorage.setItem(storageKey('pet', userId), JSON.stringify(pet))
+  else localStorage.removeItem(storageKey('pet', userId))
+}
+
 export default function App() {
   const { authenticated, user } = usePrivy()
   const userId = authenticated ? (user?.email?.address || user?.google?.email || user?.id || null) : null
-  const [pet, setPet] = useState<PetDef | null>(null)
+  const [pet, setPet] = useState<PetDef | null>(() => loadPet(userId))
   const [coins, setCoins] = useState(() => loadCoins(userId))
 
-  // Reload coins when user changes
+  // Reload pet and coins when user changes
   useEffect(() => {
+    setPet(loadPet(userId))
     setCoins(loadCoins(userId))
   }, [userId])
+
+  const selectPet = (p: PetDef) => {
+    setPet(p)
+    savePet(p, userId)
+  }
+
+  const resetPet = () => {
+    setPet(null)
+    savePet(null, userId)
+  }
 
   return (
     <>
       <Header coins={coins} userId={userId} />
       {pet ? (
-        <PetView pet={pet} onReset={() => setPet(null)} coins={coins} setCoins={setCoins} userId={userId} />
+        <PetView pet={pet} onReset={resetPet} coins={coins} setCoins={setCoins} userId={userId} />
       ) : (
-        <PetSelect onSelect={setPet} />
+        <PetSelect onSelect={selectPet} />
       )}
     </>
   )
