@@ -644,7 +644,47 @@ function TrainingTab({ pet, userId, coins, setCoins, setStats }: {
     if (!imagePreview || !selectedCategory || evaluating) return
     const category = TRAINING_CATEGORIES.find(c => c.id === selectedCategory)!
     setEvaluating(true)
-    const { score, feedback } = await evaluateTraining(imagePreview, category)
+
+    let score: number
+    let feedback: string
+
+    try {
+      // Compress image if too large (>1MB base64) to avoid crashes
+      let imgData = imagePreview
+      if (imgData.length > 1_000_000) {
+        try {
+          const img = new Image()
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve()
+            img.onerror = reject
+            img.src = imgData
+          })
+          const canvas = document.createElement('canvas')
+          const maxDim = 800
+          let w = img.width, h = img.height
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h)
+            w = Math.round(w * ratio)
+            h = Math.round(h * ratio)
+          }
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, w, h)
+          imgData = canvas.toDataURL('image/jpeg', 0.7)
+        } catch {
+          // If compression fails, use original
+        }
+      }
+
+      const result = await evaluateTraining(imgData, category)
+      score = result.score
+      feedback = result.feedback
+    } catch {
+      score = 40 + Math.floor(Math.random() * 21)
+      feedback = '⚠️ Error al evaluar. Se asignó un puntaje estimado.'
+    }
+
     setEvaluating(false)
 
     // Apply rewards
