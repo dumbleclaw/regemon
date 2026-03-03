@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
-import { PETS, type PetDef } from './pets'
+import { PET_TYPES, createPet, type PetDef } from './pets'
 
 /* ─── Types ─── */
 type Stats = { hambre: number; felicidad: number; energia: number }
@@ -292,25 +292,108 @@ function Feedback({ text, type }: { text: string; type: 'processing' | 'success'
 }
 
 function PetSelect({ onSelect }: { onSelect: (p: PetDef) => void }) {
+  const [name, setName] = useState('')
+  const [selectedType, setSelectedType] = useState<string | null>(null)
+
+  const nameValid = name.trim().length >= 2 && name.trim().length <= 15
+  const canCreate = nameValid && selectedType !== null
+
+  const handleCreate = () => {
+    if (!canCreate || !selectedType) return
+    const pet = createPet(name.trim(), selectedType)
+    onSelect(pet)
+  }
+
   return (
     <div className="animate-fade-in" style={{ textAlign: 'center', padding: '1rem 0' }}>
-      <h1 style={{ fontSize: '1.1rem', marginBottom: '0.3rem', color: 'var(--border)' }}>🎮 REGEMON</h1>
-      <p style={{ fontSize: '0.5rem', color: 'var(--text-dim)', marginBottom: '1.5rem' }}>Elige tu compañero</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {PETS.map(p => (
-          <button key={p.id} onClick={() => onSelect(p)} className="pixel-border pet-select-btn" style={{
-            fontFamily: "'Press Start 2P', monospace", fontSize: '0.5rem', padding: '1rem',
-            background: 'var(--bg-card)', color: p.color, cursor: 'pointer', textAlign: 'left',
-            display: 'flex', gap: '1rem', alignItems: 'center', borderColor: p.color,
-          }}>
-            <pre style={{ fontSize: '0.45rem', lineHeight: 1.3, margin: 0 }}>{p.art.join('\n')}</pre>
-            <div>
-              <div style={{ fontSize: '0.7rem', marginBottom: '0.4rem' }}>{p.name}</div>
-              <div style={{ color: 'var(--text-dim)', fontSize: '0.45rem' }}>{p.desc}</div>
-            </div>
-          </button>
-        ))}
+      <h1 style={{ fontSize: '1rem', marginBottom: '0.3rem', color: 'var(--border)' }}>🎮 REGEMON</h1>
+      <h2 style={{ fontSize: '0.65rem', color: 'var(--text)', marginBottom: '1.5rem' }}>Crea tu Regenmon</h2>
+
+      {/* Name input */}
+      <div className="pixel-border" style={{
+        background: 'var(--bg-card)', padding: '1rem', marginBottom: '1rem', borderColor: '#555',
+        textAlign: 'left',
+      }}>
+        <label style={{ fontSize: '0.5rem', color: 'var(--text-dim)', display: 'block', marginBottom: '0.5rem' }}>
+          ✏️ Nombre de tu Regenmon
+        </label>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          maxLength={15}
+          placeholder="Escribe un nombre..."
+          style={{
+            width: '100%', fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem',
+            padding: '0.6rem', background: '#0a0a1a', color: 'var(--text)',
+            border: `3px solid ${name.length > 0 ? (nameValid ? '#53d769' : '#e94560') : '#444'}`,
+            outline: 'none', boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ fontSize: '0.35rem', color: nameValid ? '#53d769' : 'var(--text-dim)', marginTop: '0.3rem' }}>
+          {name.trim().length}/15 caracteres {name.trim().length > 0 && !nameValid && '(mínimo 2)'}
+        </div>
       </div>
+
+      {/* Type selection */}
+      <div className="pixel-border" style={{
+        background: 'var(--bg-card)', padding: '1rem', marginBottom: '1rem', borderColor: '#555',
+        textAlign: 'left',
+      }}>
+        <label style={{ fontSize: '0.5rem', color: 'var(--text-dim)', display: 'block', marginBottom: '0.75rem' }}>
+          🧬 Elige el tipo
+        </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          {PET_TYPES.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setSelectedType(t.id)}
+              className="pixel-border pet-select-btn"
+              style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: '0.5rem', padding: '0.8rem',
+                background: selectedType === t.id ? `${t.color}20` : 'var(--bg)',
+                color: t.color, cursor: 'pointer', textAlign: 'left',
+                display: 'flex', gap: '1rem', alignItems: 'center',
+                borderColor: selectedType === t.id ? t.color : '#333',
+                borderWidth: selectedType === t.id ? '4px' : '3px',
+                boxShadow: selectedType === t.id ? `0 0 15px ${t.color}40` : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              <pre style={{ fontSize: '0.4rem', lineHeight: 1.3, margin: 0 }}>{t.art.join('\n')}</pre>
+              <div>
+                <div style={{ fontSize: '0.65rem', marginBottom: '0.3rem' }}>{t.emoji} {t.label}</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: '0.4rem' }}>{t.desc}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Create button */}
+      <button
+        onClick={handleCreate}
+        disabled={!canCreate}
+        className="action-btn"
+        style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: '0.7rem', padding: '1rem 2rem',
+          background: canCreate ? 'var(--border)' : '#333',
+          color: canCreate ? '#fff' : '#666',
+          border: `4px solid ${canCreate ? 'var(--border)' : '#444'}`,
+          cursor: canCreate ? 'pointer' : 'not-allowed',
+          boxShadow: canCreate ? '4px 4px 0 rgba(0,0,0,0.5), 0 0 20px var(--border)' : 'none',
+          width: '100%',
+          transition: 'all 0.2s',
+        }}
+      >
+        🥚 ¡Eclosionar!
+      </button>
+      {!canCreate && (
+        <p style={{ fontSize: '0.35rem', color: '#888', marginTop: '0.5rem' }}>
+          {!nameValid && name.length > 0 ? 'El nombre debe tener entre 2 y 15 letras' :
+           !nameValid ? 'Escribe un nombre para tu Regenmon' :
+           'Selecciona un tipo para continuar'}
+        </p>
+      )}
     </div>
   )
 }

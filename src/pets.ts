@@ -1,33 +1,28 @@
+export interface PetType {
+  id: string
+  label: string
+  emoji: string
+  color: string
+  desc: string
+  art: string[]
+}
+
 export interface PetDef {
   id: string
   name: string
   desc: string
-  art: string[]  // ASCII art lines
+  art: string[]
   color: string
+  typeId: string
 }
 
-export const PETS: PetDef[] = [
+export const PET_TYPES: PetType[] = [
   {
-    id: 'flameko',
-    name: 'Flameko',
-    desc: '🔥 Tipo fuego — travieso y hambriento',
-    color: '#e94560',
-    art: [
-      '    \\\\  //',
-      '   (  💥  )',
-      '   / 👁👁 \\',
-      '  |  \\_/  |',
-      '   \\     /',
-      '    ╰───╯',
-      '   /|   |\\',
-      '    🔥🔥🔥',
-    ],
-  },
-  {
-    id: 'leafito',
-    name: 'Leafito',
-    desc: '🌿 Tipo planta — tranquilo y tierno',
+    id: 'semilla',
+    label: 'Semilla',
+    emoji: '🌱',
     color: '#53d769',
+    desc: 'Tipo planta — tranquilo y tierno',
     art: [
       '    🌱🌱🌱',
       '   (      )',
@@ -40,10 +35,11 @@ export const PETS: PetDef[] = [
     ],
   },
   {
-    id: 'droppy',
-    name: 'Droppy',
-    desc: '💧 Tipo agua — juguetón y veloz',
+    id: 'gota',
+    label: 'Gota',
+    emoji: '💧',
     color: '#4fc3f7',
+    desc: 'Tipo agua — juguetón y veloz',
     art: [
       '     💧💧',
       '   (      )',
@@ -55,4 +51,33 @@ export const PETS: PetDef[] = [
       '    🌊🌊🌊',
     ],
   },
+  {
+    id: 'chispa',
+    label: 'Chispa',
+    emoji: '✨',
+    color: '#f5c842',
+    desc: 'Tipo eléctrico — brillante y enérgico',
+    art: [
+      '    ⚡✨⚡',
+      '   (      )',
+      '   | ★  ★ |',
+      '   |  ▿   |',
+      '   \\ ⚡⚡ /',
+      '    ╰───╯',
+      '   /|   |\\',
+      '    ✨✨✨',
+    ],
+  },
 ]
+
+export function createPet(name: string, typeId: string): PetDef {
+  const petType = PET_TYPES.find(t => t.id === typeId)!
+  return {
+    id: `${typeId}-${name.toLowerCase()}`,
+    name,
+    desc: `${petType.emoji} ${petType.desc}`,
+    art: petType.art,
+    color: petType.color,
+    typeId,
+  }
+}
