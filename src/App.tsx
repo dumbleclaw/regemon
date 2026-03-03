@@ -8,6 +8,9 @@ type ChatMsg = { role: 'user' | 'assistant'; content: string; id: number }
 type Memory = { key: string; value: string }
 type StatFloat = { id: number; text: string; x: number; color?: string }
 type HistoryEntry = { action: string; coins: number; time: number }
+type TrainingCategory = 'codigo' | 'diseno' | 'proyecto' | 'aprendizaje'
+type TrainingHistoryEntry = { score: number; category: TrainingCategory; timestamp: number }
+type TrainingData = { totalPoints: number; stage: number; trainingHistory: TrainingHistoryEntry[] }
 
 /* ─── Constants ─── */
 const DECAY_INTERVAL = 2000
@@ -63,6 +66,24 @@ function loadStats(petId: string, userId?: string | null): Stats | null {
 function saveStats(petId: string, stats: Stats, userId?: string | null) {
   localStorage.setItem(storageKey('stats', userId, petId), JSON.stringify(stats))
 }
+function loadTrainingData(userId?: string | null): TrainingData {
+  return loadJSON(storageKey('training', userId), { totalPoints: 0, stage: 1, trainingHistory: [] })
+}
+function saveTrainingData(data: TrainingData, userId?: string | null) {
+  localStorage.setItem(storageKey('training', userId), JSON.stringify(data))
+}
+function getStageInfo(pts: number): { stage: number; emoji: string; label: string; next: number } {
+  if (pts >= 1500) return { stage: 3, emoji: '🐉', label: 'Adulto', next: Infinity }
+  if (pts >= 500) return { stage: 2, emoji: '🐣', label: 'Joven', next: 1500 }
+  return { stage: 1, emoji: '🥚', label: 'Bebé', next: 500 }
+}
+
+const TRAINING_CATEGORIES: { id: TrainingCategory; emoji: string; label: string; desc: string; criteria: string }[] = [
+  { id: 'codigo', emoji: '💻', label: 'Código', desc: 'Tu mejor código', criteria: 'organización del código, buenas prácticas, complejidad y limpieza' },
+  { id: 'diseno', emoji: '🎨', label: 'Diseño', desc: 'UI/UX o gráfico', criteria: 'estética, uso de colores, tipografía y creatividad' },
+  { id: 'proyecto', emoji: '🚀', label: 'Proyecto', desc: 'Proyecto completo', criteria: 'funcionalidad, calidad general y complejidad del proyecto' },
+  { id: 'aprendizaje', emoji: '📚', label: 'Aprendizaje', desc: 'Notas o ejercicios', criteria: 'esfuerzo, comprensión del tema y aplicación práctica' },
+]
 
 /* ─── Memory extraction ─── */
 function extractMemories(text: string, existing: Memory[]): Memory[] {
@@ -552,6 +573,274 @@ function ChatSection({ pet, stats, setStats, coins, setCoins, userId, addHistory
   )
 }
 
+/* ─── Training Evaluation ─── */
+async function evaluateTraining(imageBase64: string, category: typeof TRAINING_CATEGORIES[number]): Promise<{ score: number; feedback: string }> {
+  const key = import.meta.env.VITE_OPENAI_API_KEY
+  if (!key || key === 'sk-placeholder') {
+    await new Promise(r => setTimeout(r, 1500))
+    const score = 40 + Math.floor(Math.random() * 21)
+    return { score, feedback: '⚠️ Sistema de evaluación temporalmente no disponible. Se asignó un puntaje estimado.' }
+  }
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: `Eres un profesor amigable en un juego educativo de mascotas virtuales. Tu tarea es evaluar capturas de pantalla que los estudiantes suben para entrenar a su mascota. La categoría es "${category.emoji} ${category.label}" y los criterios de evaluación son: ${category.criteria}. SIEMPRE evalúa lo que veas en la imagen, sin importar el contenido. Sé constructivo y motivador. Responde EXACTAMENTE en este formato: "Score: [0-100]/100. [1-2 oraciones de retroalimentación constructiva en español]"`
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `Evalúa esta captura en la categoría ${category.label} (${category.desc}).` },
+              { type: 'image_url', image_url: { url: imageBase64 } }
+            ]
+          }
+        ],
+        max_tokens: 200,
+      }),
+    })
+    const data = await res.json()
+    const text = data.choices?.[0]?.message?.content || ''
+    const scoreMatch = text.match(/Score:\s*(\d+)\/100/)
+    const score = scoreMatch ? Math.min(100, Math.max(0, parseInt(scoreMatch[1]))) : 50
+    const feedback = text.replace(/Score:\s*\d+\/100\.?\s*/, '').trim() || 'Buen intento, sigue practicando.'
+    return { score, feedback }
+  } catch {
+    const score = 40 + Math.floor(Math.random() * 21)
+    return { score, feedback: '⚠️ Sistema de evaluación temporalmente no disponible. Se asignó un puntaje estimado.' }
+  }
+}
+
+function TrainingTab({ pet, userId, coins, setCoins, setStats }: {
+  pet: PetDef; userId: string | null; coins: number;
+  setCoins: React.Dispatch<React.SetStateAction<number>>;
+  setStats: React.Dispatch<React.SetStateAction<Stats>>
+}) {
+  const [trainingData, setTrainingData] = useState<TrainingData>(() => loadTrainingData(userId))
+  const [selectedCategory, setSelectedCategory] = useState<TrainingCategory | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [evaluating, setEvaluating] = useState(false)
+  const [result, setResult] = useState<{ score: number; feedback: string; category: TrainingCategory } | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { saveTrainingData(trainingData, userId) }, [trainingData, userId])
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { alert('⚠️ La imagen no puede superar 5MB'); return }
+    const reader = new FileReader()
+    reader.onload = () => setImagePreview(reader.result as string)
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const handleEvaluate = async () => {
+    if (!imagePreview || !selectedCategory || evaluating) return
+    const category = TRAINING_CATEGORIES.find(c => c.id === selectedCategory)!
+    setEvaluating(true)
+    const { score, feedback } = await evaluateTraining(imagePreview, category)
+    setEvaluating(false)
+
+    // Apply rewards
+    const pointsEarned = score
+    const tokensEarned = Math.floor(score * 0.5)
+    const newTotal = trainingData.totalPoints + pointsEarned
+    const oldStageInfo = getStageInfo(trainingData.totalPoints)
+    const newStageInfo = getStageInfo(newTotal)
+
+    // Apply stat effects
+    let statEffects: Partial<Stats>
+    if (score >= 80) statEffects = { felicidad: 15, energia: -20, hambre: 15 }
+    else if (score >= 60) statEffects = { felicidad: 8, energia: -15, hambre: 12 }
+    else if (score >= 40) statEffects = { felicidad: 3, energia: -12, hambre: 10 }
+    else statEffects = { felicidad: -10, energia: -15, hambre: 10 }
+
+    setStats(s => ({
+      hambre: clamp(s.hambre + (statEffects.hambre || 0)),
+      felicidad: clamp(s.felicidad + (statEffects.felicidad || 0)),
+      energia: clamp(s.energia + (statEffects.energia || 0)),
+    }))
+
+    // Add coins
+    let totalTokens = tokensEarned
+    if (newStageInfo.stage > oldStageInfo.stage) totalTokens += 100
+    setCoins(c => { const nc = c + totalTokens; saveCoins(nc, userId); return nc })
+
+    // Evolution alert
+    if (newStageInfo.stage > oldStageInfo.stage) {
+      setTimeout(() => alert(`🎉 ¡${pet.name} evolucionó a etapa ${newStageInfo.stage} (${newStageInfo.emoji} ${newStageInfo.label})! +100 tokens bonus`), 100)
+    }
+
+    // Update training data
+    const newHistory = [...trainingData.trainingHistory, { score, category: selectedCategory, timestamp: Date.now() }].slice(-20)
+    setTrainingData({ totalPoints: newTotal, stage: newStageInfo.stage, trainingHistory: newHistory })
+
+    setResult({ score, feedback, category: selectedCategory })
+  }
+
+  const resetForm = () => {
+    setSelectedCategory(null)
+    setImagePreview(null)
+    setResult(null)
+  }
+
+  const stageInfo = getStageInfo(trainingData.totalPoints)
+
+  // Results view
+  if (result) {
+    const { score, feedback } = result
+    const scoreEmoji = score >= 80 ? '🏆' : score >= 60 ? '⭐' : score >= 40 ? '👍' : '💪'
+    const scoreBg = score >= 80 ? '#e94560' : score >= 60 ? '#f5c842' : score >= 40 ? '#f5c842' : '#e94560'
+    const pointsEarned = score
+    const tokensEarned = Math.floor(score * 0.5)
+    const effects = score >= 80 ? { felicidad: 15, energia: -20, hambre: 15 }
+      : score >= 60 ? { felicidad: 8, energia: -15, hambre: 12 }
+      : score >= 40 ? { felicidad: 3, energia: -12, hambre: 10 }
+      : { felicidad: -10, energia: -15, hambre: 10 }
+
+    return (
+      <div className="animate-fade-in" style={{ marginTop: '1rem' }}>
+        {/* Score */}
+        <div className="pixel-border" style={{ background: scoreBg + '30', borderColor: scoreBg, padding: '1.5rem', textAlign: 'center', marginBottom: '0.75rem' }}>
+          <div style={{ fontSize: '1.5rem' }}>{scoreEmoji}</div>
+          <div style={{ fontSize: '1.2rem', color: scoreBg, marginTop: '0.5rem' }}>{score}/100</div>
+        </div>
+        {/* Feedback */}
+        <div className="pixel-border" style={{ background: '#0a0a1a', borderColor: '#444', padding: '0.75rem', marginBottom: '0.75rem' }}>
+          <p style={{ fontSize: '0.4rem', lineHeight: 1.8, color: 'var(--text)' }}>{feedback}</p>
+        </div>
+        {/* Rewards */}
+        <div className="pixel-border" style={{ background: 'var(--bg-card)', borderColor: '#53d769', padding: '0.75rem', marginBottom: '0.75rem' }}>
+          <div style={{ fontSize: '0.5rem', color: '#53d769', marginBottom: '0.5rem' }}>🎁 Recompensas</div>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.45rem', color: '#f5c842' }}>⭐ +{pointsEarned} Puntos</span>
+            <span style={{ fontSize: '0.45rem', color: '#53d769' }}>🍎 +{tokensEarned} Tokens</span>
+          </div>
+        </div>
+        {/* Stat effects */}
+        <div className="pixel-border" style={{ background: 'var(--bg-card)', borderColor: '#555', padding: '0.75rem', marginBottom: '0.75rem' }}>
+          <div style={{ fontSize: '0.45rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>📊 Efectos</div>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {Object.entries(effects).map(([key, val]) => (
+              <span key={key} style={{ fontSize: '0.4rem', color: val > 0 ? '#53d769' : '#e94560' }}>
+                {key === 'felicidad' ? '😊' : key === 'energia' ? '⚡' : '🍖'} {key}: {val > 0 ? '+' : ''}{val}
+              </span>
+            ))}
+          </div>
+        </div>
+        {/* Evolution progress */}
+        <div className="pixel-border" style={{ background: 'var(--bg-card)', borderColor: '#f5c842', padding: '0.75rem', marginBottom: '0.75rem', textAlign: 'center' }}>
+          <div style={{ fontSize: '0.4rem', color: '#f5c842' }}>
+            Total: {trainingData.totalPoints} pts | {stageInfo.emoji} Etapa {stageInfo.stage}/3
+            {stageInfo.next !== Infinity && ` | Próxima evolución: ${stageInfo.next} pts`}
+          </div>
+        </div>
+        <button onClick={resetForm} className="action-btn" style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem', padding: '0.8rem',
+          background: '#e94560', color: '#fff', border: '3px solid #e94560', cursor: 'pointer',
+          width: '100%', boxShadow: '4px 4px 0 rgba(0,0,0,0.5)',
+        }}>🎓 Entrenar Nuevamente</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="animate-fade-in" style={{ marginTop: '1rem' }}>
+      {/* Category selection */}
+      <div style={{ fontSize: '0.5rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>📂 Categoría</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+        {TRAINING_CATEGORIES.map(cat => (
+          <button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className="pixel-border" style={{
+            fontFamily: "'Press Start 2P', monospace", fontSize: '0.4rem', padding: '0.6rem',
+            background: selectedCategory === cat.id ? '#e9456030' : 'var(--bg)',
+            color: selectedCategory === cat.id ? '#e94560' : 'var(--text-dim)',
+            borderColor: selectedCategory === cat.id ? '#e94560' : '#333',
+            cursor: 'pointer', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '1rem', marginBottom: '0.3rem' }}>{cat.emoji}</div>
+            <div>{cat.label}</div>
+            <div style={{ fontSize: '0.3rem', marginTop: '0.2rem', color: '#888' }}>{cat.desc}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Upload */}
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFileSelect} style={{ display: 'none' }} />
+      {!imagePreview ? (
+        <button onClick={() => { if (!selectedCategory) { alert('Selecciona una categoría primero'); return }; fileRef.current?.click() }}
+          className="action-btn" style={{
+            fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem', padding: '0.8rem',
+            background: selectedCategory ? '#e94560' : '#333', color: selectedCategory ? '#fff' : '#666',
+            border: `3px solid ${selectedCategory ? '#e94560' : '#444'}`, cursor: selectedCategory ? 'pointer' : 'not-allowed',
+            width: '100%', boxShadow: selectedCategory ? '4px 4px 0 rgba(0,0,0,0.5)' : 'none',
+          }}>📸 Subir Captura</button>
+      ) : (
+        <div>
+          <div className="pixel-border" style={{ borderColor: '#e94560', overflow: 'hidden', marginBottom: '0.5rem' }}>
+            <img src={imagePreview} alt="preview" style={{ width: '100%', height: '300px', objectFit: 'contain', background: '#0a0a1a', display: 'block', imageRendering: 'auto' }} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={handleEvaluate} disabled={evaluating} className="action-btn" style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: '0.5rem', padding: '0.7rem', flex: 1,
+              background: evaluating ? '#555' : '#53d769', color: '#fff',
+              border: `3px solid ${evaluating ? '#444' : '#53d769'}`, cursor: evaluating ? 'not-allowed' : 'pointer',
+              boxShadow: evaluating ? 'none' : '4px 4px 0 rgba(0,0,0,0.5)',
+            }}>{evaluating ? '🔄 Evaluando...' : '✅ Evaluar'}</button>
+            <button onClick={() => setImagePreview(null)} disabled={evaluating} className="action-btn" style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: '0.5rem', padding: '0.7rem', flex: 1,
+              background: '#e94560', color: '#fff', border: '3px solid #e94560', cursor: 'pointer',
+              boxShadow: '4px 4px 0 rgba(0,0,0,0.5)',
+            }}>❌ Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Evolution progress */}
+      <div style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.4rem', color: '#f5c842' }}>
+        {stageInfo.emoji} {trainingData.totalPoints} pts | Etapa {stageInfo.stage}/3
+        {stageInfo.next !== Infinity && ` | Próx: ${stageInfo.next} pts`}
+      </div>
+
+      {/* Training History */}
+      {trainingData.trainingHistory.length > 0 && (
+        <div className="pixel-border" style={{ background: 'var(--bg-card)', padding: '0.75rem', marginTop: '0.75rem', borderColor: '#555' }}>
+          <button onClick={() => setHistoryOpen(!historyOpen)} style={{
+            fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', background: 'none',
+            color: 'var(--text-dim)', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left',
+          }}>
+            {historyOpen ? '▼' : '▶'} Historial de Entrenamiento ({trainingData.trainingHistory.length})
+          </button>
+          {historyOpen && (
+            <div style={{ marginTop: '0.5rem' }}>
+              {[...trainingData.trainingHistory].reverse().map((h, i) => {
+                const cat = TRAINING_CATEGORIES.find(c => c.id === h.category)
+                return (
+                  <div key={i} style={{ fontSize: '0.35rem', color: 'var(--text-dim)', padding: '0.3rem 0', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{cat?.emoji} {cat?.label}</span>
+                    <span style={{ color: h.score >= 80 ? '#53d769' : h.score >= 60 ? '#f5c842' : '#e94560' }}>{h.score}/100</span>
+                    <span>{new Date(h.timestamp).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit' })}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Coins display */}
+      <div style={{ marginTop: '0.5rem', textAlign: 'center', fontSize: '0.35rem', color: '#888' }}>
+        🍊 Balance: {coins} $FRUTA
+      </div>
+    </div>
+  )
+}
+
 function PetView({ pet, onReset, coins, setCoins, userId }: {
   pet: PetDef; onReset: () => void; coins: number;
   setCoins: React.Dispatch<React.SetStateAction<number>>; userId: string | null
@@ -562,8 +851,11 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
   const [feedback, setFeedback] = useState<{ text: string; type: 'processing' | 'success' | 'error' }>({ text: '', type: 'processing' })
   const [processing, setProcessing] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory(userId))
+  const [activeTab, setActiveTab] = useState<'pet' | 'train'>('pet')
   const msgTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const decayAccum = useRef({ hambre: 0, felicidad: 0, energia: 0 })
+  const trainingData = loadTrainingData(userId)
+  const stageInfo = getStageInfo(trainingData.totalPoints)
 
   // Persist stats
   useEffect(() => { saveStats(pet.id, stats, userId) }, [stats, pet.id, userId])
@@ -663,8 +955,27 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
         }}>↩ Cambiar</button>
       </div>
 
+      {/* Tab System */}
+      <div style={{ display: 'flex', marginBottom: '0.75rem', border: '3px solid #333' }}>
+        <button onClick={() => setActiveTab('pet')} style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', padding: '0.6rem', flex: 1,
+          background: activeTab === 'pet' ? 'var(--bg-card)' : '#0a0a1a',
+          color: activeTab === 'pet' ? '#e94560' : '#666', border: 'none', cursor: 'pointer',
+          borderBottom: activeTab === 'pet' ? '3px solid #e94560' : '3px solid transparent',
+        }}>🐾 Mascota</button>
+        <button onClick={() => setActiveTab('train')} style={{
+          fontFamily: "'Press Start 2P', monospace", fontSize: '0.45rem', padding: '0.6rem', flex: 1,
+          background: activeTab === 'train' ? 'var(--bg-card)' : '#0a0a1a',
+          color: activeTab === 'train' ? '#e94560' : '#666', border: 'none', cursor: 'pointer',
+          borderBottom: activeTab === 'train' ? '3px solid #e94560' : '3px solid transparent',
+        }}>🎓 Entrenar</button>
+      </div>
+
       <Feedback text={feedback.text} type={feedback.type} />
 
+      {activeTab === 'train' ? (
+        <TrainingTab pet={pet} userId={userId} coins={coins} setCoins={setCoins} setStats={setStats} />
+      ) : (<>
       <div className="pixel-border" style={{
         background: isHungryRage ? '#1a0000' : 'var(--bg-card)',
         padding: '1.5rem 1rem', marginBottom: '1rem',
@@ -672,8 +983,11 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
         minHeight: '180px', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', position: 'relative',
       }}>
-        <div style={{ fontSize: '0.6rem', marginBottom: '0.5rem', color: isHungryRage ? '#ff0000' : pet.color }}>
+        <div style={{ fontSize: '0.6rem', marginBottom: '0.3rem', color: isHungryRage ? '#ff0000' : pet.color }}>
           {isHungryRage ? `🔥 ${pet.name} 🔥` : pet.name}
+        </div>
+        <div style={{ fontSize: '0.35rem', color: '#f5c842', marginBottom: '0.5rem' }}>
+          {stageInfo.emoji} {stageInfo.label} | {trainingData.totalPoints} pts
         </div>
         {isDead ? (
           <div style={{ fontSize: '0.55rem', color: '#888' }}>
@@ -726,6 +1040,7 @@ function PetView({ pet, onReset, coins, setCoins, userId }: {
       )}
 
       <HistoryPanel history={history} />
+      </>)}
 
       <p style={{ fontSize: '0.35rem', color: '#555', marginTop: '1rem' }}>
         Frutero Club — VibeCoding Bootcamp S3
